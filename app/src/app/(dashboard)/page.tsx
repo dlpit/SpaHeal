@@ -25,7 +25,7 @@ export default async function DashboardPage() {
     <div className="flex-1 space-y-6 p-6 sm:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Tổng quan</h2>
+          <h2 className="text-3xl font-heading font-normal tracking-tight">Tổng quan</h2>
           <p className="text-muted-foreground mt-1">
             Hiệu suất kinh doanh trong tháng này.
           </p>
@@ -44,7 +44,7 @@ export default async function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">
+            <div className="text-2xl font-semibold text-primary">
               {formatCurrency(Number(stats.revenue))}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -58,7 +58,7 @@ export default async function DashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-semibold">
               {stats.customers}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -72,7 +72,7 @@ export default async function DashboardPage() {
             <CalendarIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-semibold">
               {stats.appointments}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -123,7 +123,7 @@ export default async function DashboardPage() {
                     <div className="font-medium">
                       +{formatCurrency(Number(invoice.totalAmount))}
                     </div>
-                    <span className="text-xs text-muted-foreground mt-1 bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full">
+                    <span className="text-xs text-muted-foreground mt-1 bg-spa-success/10 text-spa-success px-2 py-0.5 rounded-full">
                       Hoàn thành
                     </span>
                   </div>

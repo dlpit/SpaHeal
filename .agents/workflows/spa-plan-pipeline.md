@@ -68,7 +68,10 @@ last_updated: "2026-07-31"
     6. Trình bày thiết kế cuối cùng theo từng phần (200–300 từ/phần).
     7. Duy trì **Decision Log** xuyên suốt.
 - [ ] **1.3 — Đọc bộ luật thiết kế:**
-  - **PHẢI** đọc file `.agents/rules/web-design-bu-beauty-hideout.md` để nắm toàn bộ quy tắc UI/UX.
+  - **PHẢI** đọc 3 file luật thiết kế sau để nắm toàn bộ quy tắc UI/UX:
+    - 🎨 `.agents/rules/ui-colors.md` — Màu sắc, Palette, Dark Mode
+    - 📐 `.agents/rules/ui-layout.md` — Breakpoints, Grid, Spacing, Mobile-first
+    - 💻 `.agents/rules/code-style.md` — Typography, Tailwind, shadcn/ui, Clean Code
   - Mọi quyết định thiết kế ở bước 1.2 **PHẢI** tương thích với bộ luật này.
   - Nếu có xung đột giữa ý tưởng brainstorm và bộ luật → **bộ luật LUÔN THẮNG**.
 ### 🔒 GATE 1 — Cổng Chặn Bắt Buộc
@@ -78,7 +81,7 @@ last_updated: "2026-07-31"
 | 1 | Đã đạt **Understanding Lock** (User xác nhận hiểu đúng ý)   | ⬜         |
 | 2 | Đã trình bày thiết kế và **User chấp thuận** (explicit approval) | ⬜         |
 | 3 | Decision Log đã được ghi nhận đầy đủ                          | ⬜         |
-| 4 | Thiết kế **không vi phạm** bất kỳ quy tắc nào trong `web-design-bu-beauty-hideout.md` | ⬜         |
+| 4 | Thiết kế **không vi phạm** bất kỳ quy tắc nào trong `ui-colors.md`, `ui-layout.md`, `code-style.md` | ⬜         |
 **Nếu User từ chối hoặc yêu cầu thay đổi → quay lại bước 1.2, KHÔNG được tự ý tiến tiếp.**
 ---
 ## Pha 2: LÊN PLAN — Task Checklist Chi Tiết
@@ -122,7 +125,7 @@ last_updated: "2026-07-31"
 > **Trạng thái:** 🟡 Chỉ được bắt đầu sau khi User approve Plan ở Pha 2.
 ### Bước thực hiện
 - [ ] **3.1 — Thiết lập môi trường:**
-  - Đọc lại bộ luật `.agents/rules/web-design-bu-beauty-hideout.md` một lần nữa trước khi code.
+  - Đọc lại 3 file luật thiết kế (`.agents/rules/ui-colors.md`, `.agents/rules/ui-layout.md`, `.agents/rules/code-style.md`) một lần nữa trước khi code.
   - Xác nhận các CSS variables `--spa-*` đã tồn tại trong `globals.css`. Nếu chưa → tạo trước.
 - [ ] **3.2 — Code từng sub-task:**
   - **PHẢI** thực thi **TỪNG sub-task một** theo đúng thứ tự trong Checklist.
@@ -157,7 +160,9 @@ last_updated: "2026-07-31"
   - Scope review:
     - [ ] Clean Code & SOLID principles
     - [ ] TypeScript type safety (không `any`, không `as unknown`)
-    - [ ] Tuân thủ bộ luật `web-design-bu-beauty-hideout.md` (màu sắc, typography, spacing)
+    - [ ] Tuân thủ bộ luật `ui-colors.md` (màu sắc, palette, dark mode)
+    - [ ] Tuân thủ bộ luật `ui-layout.md` (spacing, breakpoints, mobile-first)
+    - [ ] Tuân thủ bộ luật `code-style.md` (typography, tailwind, shadcn/ui)
     - [ ] Performance (no unnecessary re-renders, proper imports)
     - [ ] Security (no XSS vectors, proper input sanitization)
     - [ ] Accessibility (semantic HTML, aria-labels, contrast ratio)

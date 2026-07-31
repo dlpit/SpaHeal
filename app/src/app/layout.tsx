@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Playfair_Display, Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/constants";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const playfairDisplay = Playfair_Display({
+  variable: "--font-heading",
+  subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600"],
+});
+
+const inter = Inter({
+  variable: "--font-sans",
+  subsets: ["latin", "vietnamese"],
 });
 
 const geistMono = Geist_Mono({
@@ -29,11 +36,19 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="vi"
+      className={`${playfairDisplay.variable} ${inter.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TooltipProvider>{children}</TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

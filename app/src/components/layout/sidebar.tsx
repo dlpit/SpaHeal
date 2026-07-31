@@ -17,7 +17,7 @@ export function Sidebar() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md">
             <Icons.Sparkles className="h-6 w-6 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+          <span className="text-xl font-semibold tracking-tight font-heading bg-gradient-to-r from-spa-blush-500 to-spa-blush-300 bg-clip-text text-transparent">
             Bu's Beauty
           </span>
         </Link>
@@ -60,7 +60,7 @@ export function Sidebar() {
       </div>
 
       <div className="mt-auto pt-6 px-2">
-        <div className="rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 p-4 shadow-sm border border-primary/10">
+        <div className="rounded-2xl bg-gradient-to-br from-spa-blush-50 to-spa-champagne-100/50 dark:from-spa-blush-500/10 dark:to-spa-champagne-200/5 p-4 shadow-sm border border-spa-blush-100 dark:border-spa-blush-500/20">
           <div className="flex items-center gap-3 mb-2">
             <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
               <Icons.Headset className="h-4 w-4 text-primary" />

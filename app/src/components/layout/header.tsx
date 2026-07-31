@@ -19,6 +19,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NavItem } from "@/types";
 import * as Icons from "lucide-react";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 export function Header() {
   const pathname = usePathname();
@@ -41,7 +42,7 @@ export function Header() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
                   <Sparkles className="h-5 w-5 text-primary-foreground" />
                 </div>
-                <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                <span className="text-lg font-semibold tracking-tight font-heading bg-gradient-to-r from-spa-blush-500 to-spa-blush-300 bg-clip-text text-transparent">
                   Bu's Beauty
                 </span>
               </Link>
@@ -95,6 +96,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-3 ml-auto shrink-0">
+        <ThemeToggle />
         <Button variant="ghost" size="icon" className="relative rounded-full">
           <Bell className="h-5 w-5 text-muted-foreground" />
           <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background"></span>
