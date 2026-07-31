@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { getDashboardData } from "../actions/dashboard";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage() {
   const result = await getDashboardData();
   

@@ -1,36 +1,71 @@
 "use server";
 
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/firebase";
+import { COLLECTIONS } from "@/lib/firestore-types";
+import type { ServiceDoc, StaffDoc, PaymentMethodDoc, PaymentAccountDoc, CustomerDoc, InvoiceDoc, InvoiceItemEmbed } from "@/lib/firestore-types";
 import { invoiceFormSchema, InvoiceFormValues } from "@/lib/schemas/invoice";
+import { generateInvoiceCode, serverTimestamp, toTimestamp, serializeDoc } from "@/lib/firestore-helpers";
 import { revalidatePath } from "next/cache";
+import { FieldValue } from "firebase-admin/firestore";
 
 export async function getInvoiceFormOptions() {
   try {
-    const [customers, services, staff, paymentMethods, paymentAccounts] = await Promise.all([
-      prisma.customer.findMany({
-        where: { isActive: true },
-        select: { id: true, fullName: true, phone: true },
-        orderBy: { fullName: 'asc' }
-      }),
-      prisma.service.findMany({
-        where: { isActive: true },
-        select: { id: true, code: true, name: true, price: true, categoryId: true },
-        orderBy: { sortOrder: 'asc' }
-      }).then(services => services.map(s => ({ ...s, price: Number(s.price) }))),
-      prisma.staff.findMany({
-        where: { isActive: true },
-        select: { id: true, fullName: true, code: true }
-      }),
-      prisma.paymentMethod.findMany({
-        where: { isActive: true },
-        select: { id: true, name: true, code: true }
-      }),
-      prisma.paymentAccount.findMany({
-        where: { isActive: true },
-        select: { id: true, bankName: true, code: true }
-      })
+    const [
+      customersSnap,
+      servicesSnap,
+      staffSnap,
+      paymentMethodsSnap,
+      paymentAccountsSnap,
+    ] = await Promise.all([
+      db.collection(COLLECTIONS.CUSTOMERS)
+        .where('isActive', '==', true)
+        .get(),
+      db.collection(COLLECTIONS.SERVICES)
+        .where('isActive', '==', true)
+        .get(),
+      db.collection(COLLECTIONS.STAFF)
+        .where('isActive', '==', true)
+        .get(),
+      db.collection(COLLECTIONS.PAYMENT_METHODS)
+        .where('isActive', '==', true)
+        .get(),
+      db.collection(COLLECTIONS.PAYMENT_ACCOUNTS)
+        .where('isActive', '==', true)
+        .get(),
     ]);
+
+    const customers = customersSnap.docs.map(doc => {
+      const data = doc.data() as CustomerDoc;
+      return { id: doc.id, fullName: data.fullName, phone: data.phone };
+    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+    const services = servicesSnap.docs.map(doc => {
+      const data = doc.data() as ServiceDoc;
+      return {
+        id: doc.id,
+        code: data.code,
+        name: data.name,
+        price: data.price,
+        categoryId: data.categoryId,
+        sortOrder: data.sortOrder,
+      };
+    }).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+    const staff = staffSnap.docs.map(doc => {
+      const data = doc.data() as StaffDoc;
+      return { id: doc.id, fullName: data.fullName, code: data.code };
+    });
+
+    const paymentMethods = paymentMethodsSnap.docs.map(doc => {
+      const data = doc.data() as PaymentMethodDoc;
+      return { id: doc.id, name: data.name, code: data.code };
+    });
+
+    const paymentAccounts = paymentAccountsSnap.docs.map(doc => {
+      const data = doc.data() as PaymentAccountDoc;
+      return { id: doc.id, bankName: data.bankName, code: data.code };
+    });
 
     return {
       success: true,
@@ -39,8 +74,8 @@ export async function getInvoiceFormOptions() {
         services,
         staff,
         paymentMethods,
-        paymentAccounts
-      }
+        paymentAccounts,
+      },
     };
   } catch (error) {
     console.error("Error fetching invoice options:", error);
@@ -55,81 +90,111 @@ export async function createInvoice(data: InvoiceFormValues) {
 
     // Calculate totals on server to prevent tampering
     let subTotal = 0;
-    const itemsData = validData.items.map(item => {
+    const itemsForInvoice: InvoiceItemEmbed[] = [];
+
+    // Fetch service details for denormalization
+    const serviceIds = validData.items.map(item => item.serviceId);
+    const servicePromises = serviceIds.map(id =>
+      db.collection(COLLECTIONS.SERVICES).doc(id).get()
+    );
+    const serviceDocs = await Promise.all(servicePromises);
+    const serviceMap = new Map<string, ServiceDoc & { id: string }>();
+    for (const doc of serviceDocs) {
+      if (doc.exists) {
+        serviceMap.set(doc.id, { id: doc.id, ...doc.data() as ServiceDoc });
+      }
+    }
+
+    for (const item of validData.items) {
       const amount = item.quantity * item.unitPrice;
       subTotal += amount;
-      return {
+      
+      const service = serviceMap.get(item.serviceId);
+      itemsForInvoice.push({
         serviceId: item.serviceId,
+        serviceName: service?.name || 'Unknown',
+        serviceCode: service?.code || 'N/A',
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        amount: amount,
-      };
-    });
+        amount,
+      });
+    }
 
     const discount = validData.discount || 0;
     const surcharge = validData.surcharge || 0;
     const totalAmount = subTotal - discount + surcharge;
 
-    // Start Prisma Transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate Invoice Code (e.g. HD011)
-      const dateStart = new Date(validData.date);
-      dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(validData.date);
-      dateEnd.setHours(23, 59, 59, 999);
+    // Fetch denormalized names
+    const [customerDoc, staffDoc, paymentMethodDoc, paymentAccountDoc] = await Promise.all([
+      db.collection(COLLECTIONS.CUSTOMERS).doc(validData.customerId).get(),
+      validData.staffId
+        ? db.collection(COLLECTIONS.STAFF).doc(validData.staffId).get()
+        : Promise.resolve(null),
+      validData.paymentMethodId
+        ? db.collection(COLLECTIONS.PAYMENT_METHODS).doc(validData.paymentMethodId).get()
+        : Promise.resolve(null),
+      validData.paymentAccountId
+        ? db.collection(COLLECTIONS.PAYMENT_ACCOUNTS).doc(validData.paymentAccountId).get()
+        : Promise.resolve(null),
+    ]);
 
-      // Count invoices today to generate sequence
-      const todayCount = await tx.invoice.count({
-        where: {
-          createdAt: {
-            gte: dateStart,
-            lte: dateEnd,
-          }
-        }
-      });
-      
-      const sequence = todayCount + 1;
-      const dateStr = `${dateStart.getFullYear().toString().slice(-2)}${(dateStart.getMonth() + 1).toString().padStart(2, '0')}${dateStart.getDate().toString().padStart(2, '0')}`;
-      const invoiceCode = `HD${dateStr}-${sequence.toString().padStart(3, '0')}`;
+    const customerData = customerDoc.data() as CustomerDoc | undefined;
+    const staffData = staffDoc?.exists ? (staffDoc.data() as StaffDoc) : null;
+    const pmData = paymentMethodDoc?.exists ? (paymentMethodDoc.data() as PaymentMethodDoc) : null;
+    const paData = paymentAccountDoc?.exists ? (paymentAccountDoc.data() as PaymentAccountDoc) : null;
 
-      // 2. Create Invoice
-      const invoice = await tx.invoice.create({
-        data: {
-          invoiceCode,
-          date: validData.date,
-          customerId: validData.customerId,
-          staffId: validData.staffId || null,
-          paymentMethodId: validData.paymentMethodId || null,
-          paymentAccountId: validData.paymentAccountId || null,
-          subTotal,
-          discount,
-          surcharge,
-          totalAmount,
-          notes: validData.notes,
-          status: 'COMPLETED',
-          items: {
-            create: itemsData,
-          }
-        }
-      });
+    // Generate invoice code
+    const invoiceDate = validData.date;
+    const invoiceCode = await generateInvoiceCode(invoiceDate);
 
-      // 3. Update Customer Stats
-      await tx.customer.update({
-        where: { id: validData.customerId },
-        data: {
-          totalSpent: { increment: totalAmount },
-          visitCount: { increment: 1 },
-          lastVisit: validData.date,
-        }
-      });
+    // Use Firestore transaction for atomicity
+    const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc();
 
-      return invoice;
+    const invoiceData: Omit<InvoiceDoc, 'createdAt' | 'updatedAt'> & { createdAt: FieldValue; updatedAt: FieldValue } = {
+      invoiceCode,
+      date: toTimestamp(invoiceDate),
+      customerId: validData.customerId,
+      customerName: customerData?.fullName || 'Khách vãng lai',
+      staffId: validData.staffId || null,
+      staffName: staffData?.fullName || null,
+      paymentMethodId: validData.paymentMethodId || null,
+      paymentMethodName: pmData?.name || null,
+      paymentAccountId: validData.paymentAccountId || null,
+      paymentAccountName: paData?.bankName || null,
+      subTotal,
+      discount,
+      surcharge,
+      totalAmount,
+      status: 'COMPLETED',
+      notes: validData.notes || null,
+      items: itemsForInvoice,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    // Batch write: create invoice + update customer stats
+    const batch = db.batch();
+    
+    batch.set(invoiceRef, invoiceData);
+
+    // Update customer stats
+    const customerRef = db.collection(COLLECTIONS.CUSTOMERS).doc(validData.customerId);
+    batch.update(customerRef, {
+      totalSpent: FieldValue.increment(totalAmount),
+      visitCount: FieldValue.increment(1),
+      lastVisit: toTimestamp(invoiceDate),
+      updatedAt: serverTimestamp(),
     });
+
+    await batch.commit();
 
     revalidatePath('/doanh-thu');
     revalidatePath('/');
-    
-    return { success: true, data: result };
+
+    return {
+      success: true,
+      data: { id: invoiceRef.id, invoiceCode },
+    };
 
   } catch (error) {
     console.error("Error creating invoice:", error);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
@@ -35,6 +35,7 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
@@ -48,7 +49,7 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
       paymentMethodId: "",
       paymentAccountId: "",
       notes: ""
-    } as any,
+    }
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -61,8 +62,16 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
   const discount = form.watch("discount") || 0;
   const surcharge = form.watch("surcharge") || 0;
 
-  const subTotal = items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.unitPrice || 0)), 0);
-  const totalAmount = subTotal - discount + surcharge;
+  const customerMap = useMemo(() => new Map(options.customers.map(c => [c.id, c])), [options.customers]);
+  const serviceMap = useMemo(() => new Map(options.services.map(s => [s.id, s])), [options.services]);
+  const staffMap = useMemo(() => new Map(options.staff.map(s => [s.id, s])), [options.staff]);
+  const paymentMethodMap = useMemo(() => new Map(options.paymentMethods.map(m => [m.id, m])), [options.paymentMethods]);
+  const paymentAccountMap = useMemo(() => new Map(options.paymentAccounts.map(a => [a.id, a])), [options.paymentAccounts]);
+
+  const subTotal = useMemo(() => 
+    items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.unitPrice || 0)), 0),
+  [items]);
+  const totalAmount = Math.max(0, subTotal - discount + surcharge);
 
   async function onSubmit(data: InvoiceFormValues) {
     setIsSubmitting(true);
@@ -100,7 +109,7 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
               {/* Date Picker */}
               <div className="space-y-2">
                 <Label>Ngày lập <span className="text-red-500">*</span></Label>
-                <Popover>
+                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                   <PopoverTrigger
                     render={
                       <Button
@@ -116,7 +125,12 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
                     <Calendar
                       mode="single"
                       selected={form.watch("date")}
-                      onSelect={(date) => date && form.setValue("date", date)}
+                      onSelect={(date) => {
+                        if (date) {
+                          form.setValue("date", date);
+                          setIsCalendarOpen(false);
+                        }
+                      }}
                     />
                   </PopoverContent>
                 </Popover>
@@ -129,12 +143,21 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
               <div className="space-y-2">
                 <Label>Khách hàng <span className="text-red-500">*</span></Label>
                 <Select onValueChange={(val) => form.setValue("customerId", val || "")} value={form.watch("customerId")}>
-                  <SelectTrigger className={form.formState.errors.customerId ? "border-red-500" : ""}>
-                    <SelectValue placeholder="Chọn khách hàng" />
+                  <SelectTrigger className={cn("w-full", form.formState.errors.customerId && "border-red-500")}>
+                    <SelectValue placeholder="Chọn khách hàng">
+                      {(val: string | null) => {
+                        const c = customerMap.get(val || "");
+                        return c ? `${c.fullName}${c.phone ? ` - ${c.phone}` : ""}` : null;
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {options.customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
+                      <SelectItem 
+                        key={c.id} 
+                        value={c.id}
+                        label={`${c.fullName}${c.phone ? ` - ${c.phone}` : ""}`}
+                      >
                         {c.fullName} {c.phone && `- ${c.phone}`}
                       </SelectItem>
                     ))}
@@ -149,13 +172,23 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
               <div className="space-y-2">
                 <Label>Nhân viên thực hiện</Label>
                 <Select onValueChange={(val) => form.setValue("staffId", val || undefined)} value={form.watch("staffId") || ""}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn nhân viên" />
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Chọn nhân viên">
+                      {(val: string | null) => {
+                        if (val === "none") return "Không có";
+                        const s = staffMap.get(val || "");
+                        return s ? `${s.code} - ${s.fullName}` : null;
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Không có</SelectItem>
+                    <SelectItem value="none" label="Không có">Không có</SelectItem>
                     {options.staff.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
+                      <SelectItem 
+                        key={s.id} 
+                        value={s.id}
+                        label={`${s.code} - ${s.fullName}`}
+                      >
                         {s.code} - {s.fullName}
                       </SelectItem>
                     ))}
@@ -170,12 +203,17 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
                 <div className="space-y-2">
                   <Label>Hình thức T.Toán</Label>
                   <Select onValueChange={(val) => form.setValue("paymentMethodId", val || undefined)} value={form.watch("paymentMethodId") || ""}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Chọn PTTT" />
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Chọn PTTT">
+                        {(val: string | null) => {
+                          const m = paymentMethodMap.get(val || "");
+                          return m ? m.name : null;
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {options.paymentMethods.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        <SelectItem key={m.id} value={m.id} label={m.name}>{m.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -183,12 +221,17 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
                 <div className="space-y-2">
                   <Label>Tài khoản nhận</Label>
                   <Select onValueChange={(val) => form.setValue("paymentAccountId", val || undefined)} value={form.watch("paymentAccountId") || ""}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Chọn TK" />
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Chọn TK">
+                        {(val: string | null) => {
+                          const a = paymentAccountMap.get(val || "");
+                          return a ? a.bankName : null;
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {options.paymentAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.bankName}</SelectItem>
+                        <SelectItem key={a.id} value={a.id} label={a.bankName}>{a.bankName}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -197,8 +240,9 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
 
               {/* Notes */}
               <div className="space-y-2">
-                <Label>Ghi chú</Label>
+                <Label htmlFor="notes">Ghi chú</Label>
                 <Textarea 
+                  id="notes"
                   placeholder="Ghi chú thêm..." 
                   {...form.register("notes")}
                   className="resize-none h-20"
@@ -248,18 +292,23 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
                           onValueChange={(val) => {
                             form.setValue(`items.${index}.serviceId`, val || "");
                             // Auto fill price
-                            const service = options.services.find(s => s.id === val);
+                            const service = serviceMap.get(val || "");
                             if (service) {
                               form.setValue(`items.${index}.unitPrice`, service.price);
                             }
                           }}
                         >
-                          <SelectTrigger className={error?.serviceId ? "border-red-500" : ""}>
-                            <SelectValue placeholder="Chọn dịch vụ" />
+                          <SelectTrigger className={cn("w-full", error?.serviceId && "border-red-500")}>
+                            <SelectValue placeholder="Chọn dịch vụ">
+                              {(val: string | null) => {
+                                const svc = serviceMap.get(val || "");
+                                return svc ? svc.name : null;
+                              }}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             {options.services.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>
+                              <SelectItem key={s.id} value={s.id} label={s.name}>
                                 {s.name}
                               </SelectItem>
                             ))}

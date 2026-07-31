@@ -1,85 +1,120 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/firebase";
+import { COLLECTIONS } from "@/lib/firestore-types";
+import type { InvoiceDoc, CustomerDoc, AppointmentDoc } from "@/lib/firestore-types";
+import { Timestamp } from "firebase-admin/firestore";
 
 export async function getDashboardData() {
   try {
     const now = new Date();
-    
+
     // Start and end of current month
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     // Start of today
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    // 1. Fetch Stats (Parallel)
+    const endOfToday = new Date(startOfToday.getTime() + 86400000 - 1);
+
+    // Start of 6 months ago (for chart)
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+    // Firestore Timestamps
+    const tsStartOfMonth = Timestamp.fromDate(startOfMonth);
+    const tsEndOfMonth = Timestamp.fromDate(endOfMonth);
+    const tsStartOfToday = Timestamp.fromDate(startOfToday);
+    const tsEndOfToday = Timestamp.fromDate(endOfToday);
+    const tsSixMonthsAgo = Timestamp.fromDate(sixMonthsAgo);
+
+    // 1. Fetch all data in parallel
     const [
-      currentMonthRevenue,
-      totalCustomers,
-      todayAppointments,
-      recentInvoices,
-      chartDataRaw
+      monthlyInvoicesSnap,
+      totalCustomersSnap,
+      todayAppointmentsSnap,
+      recentInvoicesSnap,
+      chartInvoicesSnap,
     ] = await Promise.all([
-      // Doanh thu tháng này
-      prisma.invoice.aggregate({
-        where: {
-          date: { gte: startOfMonth, lte: endOfMonth },
-          status: 'COMPLETED'
-        },
-        _sum: { totalAmount: true }
-      }),
-      // Tổng số khách hàng
-      prisma.customer.count({
-        where: { isActive: true }
-      }),
+      // Doanh thu tháng này (completed invoices in current month)
+      db.collection(COLLECTIONS.INVOICES)
+        .where('date', '>=', tsStartOfMonth)
+        .where('date', '<=', tsEndOfMonth)
+        .get(),
+
+      // Tổng số khách hàng active
+      db.collection(COLLECTIONS.CUSTOMERS)
+        .where('isActive', '==', true)
+        .count()
+        .get(),
+
       // Lịch hẹn hôm nay
-      prisma.appointment.count({
-        where: {
-          date: { gte: startOfToday, lte: new Date(startOfToday.getTime() + 86400000 - 1) }
-        }
-      }),
+      db.collection(COLLECTIONS.APPOINTMENTS)
+        .where('date', '>=', tsStartOfToday)
+        .where('date', '<=', tsEndOfToday)
+        .count()
+        .get(),
+
       // 5 Hóa đơn gần nhất
-      prisma.invoice.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          customer: { select: { fullName: true } }
-        }
-      }),
-      // Data biểu đồ: Doanh thu 6 tháng gần nhất (gom nhóm theo tháng)
-      // Prisma không hỗ trợ GROUP BY theo tháng trực tiếp tốt cho SQLite/MySQL một cách đồng nhất, 
-      // nên ta fetch toàn bộ hóa đơn 6 tháng và tính toán bằng JS cho an toàn.
-      prisma.invoice.findMany({
-        where: {
-          date: {
-            gte: new Date(now.getFullYear(), now.getMonth() - 5, 1),
-            lte: endOfMonth
-          },
-          status: 'COMPLETED'
-        },
-        select: {
-          date: true,
-          totalAmount: true
-        }
-      })
+      db.collection(COLLECTIONS.INVOICES)
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get(),
+
+      // Data biểu đồ: Hóa đơn 6 tháng gần nhất
+      db.collection(COLLECTIONS.INVOICES)
+        .where('date', '>=', tsSixMonthsAgo)
+        .where('date', '<=', tsEndOfMonth)
+        .get(),
     ]);
 
-    // 2. Process Chart Data
-    // Tạo mảng 6 tháng gần nhất
-    const chartData = [];
+    // 2. Calculate monthly revenue
+    let monthlyRevenue = 0;
+    monthlyInvoicesSnap.docs.forEach(doc => {
+      const data = doc.data() as InvoiceDoc;
+      if (data.status === 'COMPLETED') {
+        monthlyRevenue += data.totalAmount;
+      }
+    });
+
+    // 3. Format recent invoices (match Prisma output shape)
+    const recentInvoices = recentInvoicesSnap.docs.map(doc => {
+      const data = doc.data() as InvoiceDoc;
+      return {
+        id: doc.id,
+        invoiceCode: data.invoiceCode,
+        totalAmount: data.totalAmount,
+        status: data.status,
+        createdAt: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+        customer: {
+          fullName: data.customerName,
+        },
+      };
+    });
+
+    // 4. Process Chart Data (6 tháng gần nhất)
+    const chartData: { name: string; total: number }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthStr = `T${d.getMonth() + 1}`;
-      
-      // Lọc các hóa đơn trong tháng này
-      const monthlyTotal = chartDataRaw
-        .filter(inv => inv.date.getMonth() === d.getMonth() && inv.date.getFullYear() === d.getFullYear())
-        .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
+
+      // Lọc hóa đơn trong tháng này
+      const monthlyTotal = chartInvoicesSnap.docs
+        .filter(doc => {
+          const data = doc.data() as InvoiceDoc;
+          const invoiceDate = data.date?.toDate?.();
+          return data.status === 'COMPLETED' &&
+            invoiceDate &&
+            invoiceDate.getMonth() === d.getMonth() &&
+            invoiceDate.getFullYear() === d.getFullYear();
+        })
+        .reduce((sum, doc) => {
+          const data = doc.data() as InvoiceDoc;
+          return sum + data.totalAmount;
+        }, 0);
 
       chartData.push({
         name: monthStr,
-        total: monthlyTotal
+        total: monthlyTotal,
       });
     }
 
@@ -87,13 +122,13 @@ export async function getDashboardData() {
       success: true,
       data: {
         stats: {
-          revenue: currentMonthRevenue._sum.totalAmount || 0,
-          customers: totalCustomers,
-          appointments: todayAppointments
+          revenue: monthlyRevenue,
+          customers: totalCustomersSnap.data().count,
+          appointments: todayAppointmentsSnap.data().count,
         },
         recentInvoices,
-        chartData
-      }
+        chartData,
+      },
     };
 
   } catch (error) {
