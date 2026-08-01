@@ -30,6 +30,7 @@ import { SerializedService, SerializedServiceCategory, toggleServiceStatus } fro
 import { ServiceFormModal } from './service-form-modal';
 import { formatCurrency } from '@/lib/format';
 import { useTransition } from 'react';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 interface ServiceTableProps {
   initialServices: SerializedService[];
@@ -64,9 +65,11 @@ export function ServiceTable({ initialServices, categories }: ServiceTableProps)
   }, [initialServices, search, selectedCategory]);
 
   const totalPages = Math.max(1, Math.ceil(filteredServices.length / pageSize));
+  const actualPage = Math.min(currentPage, totalPages);
+  
   const paginatedServices = useMemo(() => {
-    return filteredServices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  }, [filteredServices, currentPage, pageSize]);
+    return filteredServices.slice((actualPage - 1) * pageSize, actualPage * pageSize);
+  }, [filteredServices, actualPage, pageSize]);
 
   const handleEdit = (service: SerializedService) => {
     setEditingService(service);
@@ -207,29 +210,12 @@ export function ServiceTable({ initialServices, categories }: ServiceTableProps)
         </Table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end space-x-2 py-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-          >
-            Trang trước
-          </Button>
-          <div className="text-sm text-[var(--spa-text-muted)]">
-            Trang {currentPage} / {totalPages}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-          >
-            Trang sau
-          </Button>
-        </div>
-      )}
+      <DataTablePagination 
+        currentPage={actualPage}
+        totalPages={totalPages}
+        totalItems={filteredServices.length}
+        onPageChange={setCurrentPage}
+      />
 
       <ServiceFormModal 
         isOpen={isModalOpen} 

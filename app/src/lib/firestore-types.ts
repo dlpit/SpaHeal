@@ -151,6 +151,13 @@ export interface InvoiceDoc {
   updatedAt: Timestamp;
 }
 
+export type ClientInvoiceDoc = Omit<InvoiceDoc, 'date' | 'createdAt' | 'updatedAt'> & {
+  id: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export interface ExpenseCategoryDoc {
   code: string;
   nature: ExpenseNature;

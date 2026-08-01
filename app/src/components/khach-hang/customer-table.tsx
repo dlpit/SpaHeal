@@ -15,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 interface CustomerTableProps {
   customers: (ClientCustomerDoc & { id: string })[];
@@ -38,10 +39,11 @@ export function CustomerTable({ customers }: CustomerTableProps) {
   }, [customers, searchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize));
+  const actualPage = Math.min(currentPage, totalPages);
   
   const paginatedCustomers = useMemo(() => {
-    return filteredCustomers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  }, [filteredCustomers, currentPage, pageSize]);
+    return filteredCustomers.slice((actualPage - 1) * pageSize, actualPage * pageSize);
+  }, [filteredCustomers, actualPage, pageSize]);
 
   const openEdit = (customer: ClientCustomerDoc & { id: string }) => {
     setSelectedCustomer(customer);
@@ -137,29 +139,12 @@ export function CustomerTable({ customers }: CustomerTableProps) {
         </Table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end space-x-2 py-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-          >
-            Trang trước
-          </Button>
-          <div className="text-sm text-muted-foreground">
-            Trang {currentPage} / {totalPages}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-          >
-            Trang sau
-          </Button>
-        </div>
-      )}
+      <DataTablePagination 
+        currentPage={actualPage}
+        totalPages={totalPages}
+        totalItems={filteredCustomers.length}
+        onPageChange={setCurrentPage}
+      />
 
       <CustomerFormDialog 
         open={sheetOpen} 

@@ -83,6 +83,26 @@ export async function getInvoiceFormOptions() {
   }
 }
 
+export async function getInvoices() {
+  try {
+    const snapshot = await db
+      .collection(COLLECTIONS.INVOICES)
+      .orderBy('date', 'desc')
+      .limit(100) // Added limit to prevent memory exhaustion
+      .get();
+
+    const invoices = snapshot.docs.map((doc) => {
+      const data = doc.data() as InvoiceDoc & Record<string, unknown>;
+      return serializeDoc(doc.id, data);
+    });
+
+    return { success: true, data: invoices };
+  } catch (error) {
+    console.error('Error fetching invoices:', error);
+    return { success: false, error: 'Không thể lấy danh sách hóa đơn.' };
+  }
+}
+
 export async function createInvoice(data: InvoiceFormValues) {
   try {
     // Validate on server
@@ -122,7 +142,8 @@ export async function createInvoice(data: InvoiceFormValues) {
 
     const discount = validData.discount || 0;
     const surcharge = validData.surcharge || 0;
-    const totalAmount = subTotal - discount + surcharge;
+    // Ensure totalAmount is never negative
+    const totalAmount = Math.max(0, subTotal - discount + surcharge);
 
     // Fetch denormalized names
     const [customerDoc, staffDoc, paymentMethodDoc, paymentAccountDoc] = await Promise.all([
@@ -138,7 +159,11 @@ export async function createInvoice(data: InvoiceFormValues) {
         : Promise.resolve(null),
     ]);
 
-    const customerData = customerDoc.data() as CustomerDoc | undefined;
+    if (!customerDoc.exists) {
+      return { success: false, error: "Khách hàng không tồn tại hoặc đã bị xóa." };
+    }
+
+    const customerData = customerDoc.data() as CustomerDoc;
     const staffData = staffDoc?.exists ? (staffDoc.data() as StaffDoc) : null;
     const pmData = paymentMethodDoc?.exists ? (paymentMethodDoc.data() as PaymentMethodDoc) : null;
     const paData = paymentAccountDoc?.exists ? (paymentAccountDoc.data() as PaymentAccountDoc) : null;
@@ -154,7 +179,7 @@ export async function createInvoice(data: InvoiceFormValues) {
       invoiceCode,
       date: toTimestamp(invoiceDate),
       customerId: validData.customerId,
-      customerName: customerData?.fullName || 'Khách vãng lai',
+      customerName: customerData.fullName,
       staffId: validData.staffId || null,
       staffName: staffData?.fullName || null,
       paymentMethodId: validData.paymentMethodId || null,
