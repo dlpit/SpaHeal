@@ -31,7 +31,22 @@ interface FormOptions {
   paymentAccounts: { id: string; bankName: string; code: string }[];
 }
 
-export function InvoiceForm({ options }: { options: FormOptions }) {
+interface InvoiceFormProps {
+  options: FormOptions;
+  /** Giá trị pre-fill từ lịch hẹn — dùng khi tạo hóa đơn từ InvoiceFromAppointmentDialog */
+  prefillValues?: Partial<InvoiceFormValues>;
+  /** Nếu true (mặc định), redirect sang /doanh-thu sau khi tạo thành công */
+  onSuccessRedirect?: boolean;
+  /** Callback tùy chọn sau khi tạo hóa đơn thành công */
+  onSuccess?: () => void;
+}
+
+export function InvoiceForm({
+  options,
+  prefillValues,
+  onSuccessRedirect = true,
+  onSuccess,
+}: InvoiceFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,9 +63,24 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
       staffId: "",
       paymentMethodId: "",
       paymentAccountId: "",
-      notes: ""
+      notes: "",
+      appointmentId: null,
+      // Merge prefillValues nếu có
+      ...prefillValues,
     }
   });
+
+  // Nếu có prefillValues.items với serviceId → auto-fill unitPrice từ options
+  useEffect(() => {
+    if (prefillValues?.items?.length && options.services.length) {
+      prefillValues.items.forEach((item, idx) => {
+        if (item.serviceId && item.unitPrice === 0) {
+          const svc = options.services.find(s => s.id === item.serviceId);
+          if (svc) form.setValue(`items.${idx}.unitPrice`, svc.price);
+        }
+      });
+    }
+  }, [options.services]);
 
   const { fields, append, remove } = useFieldArray({
     name: "items",
@@ -79,7 +109,11 @@ export function InvoiceForm({ options }: { options: FormOptions }) {
     try {
       const result = await createInvoice(data);
       if (result.success) {
-        router.push('/doanh-thu'); // Redirect on success
+        if (onSuccess) {
+          onSuccess();
+        } else if (onSuccessRedirect) {
+          router.push('/doanh-thu');
+        }
       } else {
         setError(result.error || "Đã xảy ra lỗi");
       }

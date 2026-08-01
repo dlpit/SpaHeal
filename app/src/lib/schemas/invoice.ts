@@ -7,6 +7,8 @@ export const invoiceItemSchema = z.object({
 });
 
 export const invoiceFormSchema = z.object({
+  /** Tham chiếu lịch hẹn nguồn — optional, chỉ có khi tạo hóa đơn từ lịch hẹn */
+  appointmentId: z.string().optional().nullable(),
   customerId: z.string().min(1, "Vui lòng chọn khách hàng"),
   date: z.date({
     required_error: "Vui lòng chọn ngày lập",

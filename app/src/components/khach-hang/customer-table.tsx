@@ -18,13 +18,13 @@ import {
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 interface CustomerTableProps {
-  customers: (ClientCustomerDoc & { id: string })[];
+  customers: ClientCustomerDoc[];
 }
 
 export function CustomerTable({ customers }: CustomerTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<(ClientCustomerDoc & { id: string }) | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<ClientCustomerDoc | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -45,7 +45,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
     return filteredCustomers.slice((actualPage - 1) * pageSize, actualPage * pageSize);
   }, [filteredCustomers, actualPage, pageSize]);
 
-  const openEdit = (customer: ClientCustomerDoc & { id: string }) => {
+  const openEdit = (customer: ClientCustomerDoc) => {
     setSelectedCustomer(customer);
     setSheetOpen(true);
   };
@@ -112,7 +112,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                   className="cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => openEdit(customer)}
                 >
-                  <TableCell className="font-medium py-4">{customer.customerId || 'N/A'}</TableCell>
+                  <TableCell className="font-medium py-4">{customer.customerCode || 'N/A'}</TableCell>
                   <TableCell className="py-4 font-medium text-foreground">{customer.fullName}</TableCell>
                   <TableCell className="py-4 text-muted-foreground">{customer.phone}</TableCell>
                   <TableCell className="py-4">{getTierBadge(customer.loyaltyTier)}</TableCell>

@@ -14,7 +14,7 @@ import { Loader2, User, Phone, Mail, Calendar, MapPin, Activity, Stethoscope } f
 import { ClientCustomerDoc } from '@/lib/firestore-types';
 
 interface CustomerFormProps {
-  initialData?: ClientCustomerDoc & { id: string };
+  initialData?: ClientCustomerDoc;
   onSuccess?: () => void;
 }
 

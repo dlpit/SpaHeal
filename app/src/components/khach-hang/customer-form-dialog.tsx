@@ -13,7 +13,7 @@ import { CustomerForm } from './customer-form';
 interface CustomerFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  customer?: ClientCustomerDoc & { id: string } | null;
+  customer?: ClientCustomerDoc | null;
 }
 
 export function CustomerFormDialog({ open, onOpenChange, customer }: CustomerFormDialogProps) {

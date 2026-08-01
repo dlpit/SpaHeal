@@ -2,7 +2,11 @@ import * as z from 'zod';
 
 export const appointmentSchema = z.object({
   customerId: z.string().min(1, 'Vui lòng chọn khách hàng'),
-  customerName: z.string().min(1, 'Tên khách hàng không được để trống'), // Used for denormalization
+  customerName: z.string().min(1, 'Tên khách hàng không được để trống'), // Denormalized
+  serviceId: z.string().optional().nullable(),
+  serviceName: z.string().optional().nullable(), // Denormalized — auto-fill khi chọn dịch vụ
+  staffId: z.string().optional().nullable(),
+  staffName: z.string().optional().nullable(), // Denormalized — auto-fill khi chọn kỹ thuật viên
   date: z.coerce.date({
     required_error: "Vui lòng chọn ngày hẹn",
     invalid_type_error: "Ngày hẹn không hợp lệ",

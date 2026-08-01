@@ -22,7 +22,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { appointmentSchema, AppointmentFormValues } from '@/lib/schemas/appointment';
-import { createAppointment, updateAppointment, ClientAppointmentDoc } from '@/app/actions/appointment-actions';
+import {
+  createAppointment,
+  updateAppointment,
+  ClientAppointmentDoc,
+  getServicesForAppointment,
+  getStaffForAppointment,
+} from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc } from '@/lib/firestore-types';
 
 interface AppointmentFormModalProps {
@@ -30,14 +36,30 @@ interface AppointmentFormModalProps {
   onClose: () => void;
   appointment: ClientAppointmentDoc | null;
   customers: ClientCustomerDoc[];
-  selectedDateStr?: string | null; // Pass from calendar date click
+  selectedDateStr?: string | null;
 }
 
-export function AppointmentFormModal({ isOpen, onClose, appointment, customers, selectedDateStr }: AppointmentFormModalProps) {
+type ServiceOption = { id: string; name: string; price: number; code: string };
+type StaffOption = { id: string; fullName: string; code: string };
+
+export function AppointmentFormModal({
+  isOpen,
+  onClose,
+  appointment,
+  customers,
+  selectedDateStr,
+}: AppointmentFormModalProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [services, setServices] = useState<ServiceOption[]>([]);
+  const [staffList, setStaffList] = useState<StaffOption[]>([]);
 
   const isEditing = !!appointment;
+
+  const formatDateForInput = (d: Date | string) => {
+    const dateObj = new Date(d);
+    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+  };
 
   const {
     register,
@@ -51,7 +73,11 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
     defaultValues: {
       customerId: '',
       customerName: '',
-      date: new Date(),
+      serviceId: null,
+      serviceName: null,
+      staffId: null,
+      staffName: null,
+      date: formatDateForInput(new Date()) as any,
       startTime: '09:00',
       endTime: '',
       notes: '',
@@ -60,13 +86,29 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
     },
   });
 
+  // Fetch services & staff khi modal mở lần đầu
+  useEffect(() => {
+    if (isOpen && services.length === 0) {
+      Promise.all([getServicesForAppointment(), getStaffForAppointment()]).then(
+        ([svcList, stfList]) => {
+          setServices(svcList);
+          setStaffList(stfList);
+        }
+      );
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
       if (appointment) {
         reset({
           customerId: appointment.customerId,
           customerName: appointment.customerName,
-          date: new Date(appointment.date),
+          serviceId: appointment.serviceId || null,
+          serviceName: appointment.serviceName || null,
+          staffId: appointment.staffId || null,
+          staffName: appointment.staffName || null,
+          date: formatDateForInput(appointment.date) as any,
           startTime: appointment.startTime,
           endTime: appointment.endTime || '',
           notes: appointment.notes || '',
@@ -77,7 +119,11 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
         reset({
           customerId: '',
           customerName: '',
-          date: selectedDateStr ? new Date(selectedDateStr) : new Date(),
+          serviceId: null,
+          serviceName: null,
+          staffId: null,
+          staffName: null,
+          date: selectedDateStr ? formatDateForInput(selectedDateStr) as any : formatDateForInput(new Date()) as any,
           startTime: '09:00',
           endTime: '',
           notes: '',
@@ -106,7 +152,6 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
             return;
           }
         }
-        
         onClose();
       } catch (err: any) {
         setError(err.message || 'Có lỗi xảy ra, vui lòng thử lại sau.');
@@ -116,18 +161,40 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
 
   const selectedCustomerId = watch('customerId');
   const selectedStatus = watch('status');
+  const selectedServiceId = watch('serviceId');
+  const selectedStaffId = watch('staffId');
 
   const onCustomerChange = (val: string) => {
     setValue('customerId', val, { shouldValidate: true });
-    const c = customers.find(x => x.customerId === val);
-    if (c) {
-      setValue('customerName', c.fullName, { shouldValidate: true });
+    const c = customers.find(x => x.id === val);
+    if (c) setValue('customerName', c.fullName, { shouldValidate: true });
+  };
+
+  const onServiceChange = (val: string) => {
+    if (val === '__none__') {
+      setValue('serviceId', null);
+      setValue('serviceName', null);
+      return;
     }
+    setValue('serviceId', val, { shouldValidate: true });
+    const svc = services.find(s => s.id === val);
+    if (svc) setValue('serviceName', svc.name, { shouldValidate: true });
+  };
+
+  const onStaffChange = (val: string) => {
+    if (val === '__none__') {
+      setValue('staffId', null);
+      setValue('staffName', null);
+      return;
+    }
+    setValue('staffId', val, { shouldValidate: true });
+    const stf = staffList.find(s => s.id === val);
+    if (stf) setValue('staffName', stf.fullName, { shouldValidate: true });
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[520px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-[var(--spa-text-primary)] font-serif text-xl">
             {isEditing ? 'Chỉnh sửa lịch hẹn' : 'Thêm lịch hẹn mới'}
@@ -144,10 +211,11 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
             </div>
           )}
 
+          {/* Khách hàng */}
           <div className="space-y-2">
-            <Label htmlFor="customer" className="text-[var(--spa-text-primary)]">Khách hàng <span className="text-red-500">*</span></Label>
-            <Select 
-              value={selectedCustomerId} 
+            <Label className="text-[var(--spa-text-primary)]">Khách hàng <span className="text-red-500">*</span></Label>
+            <Select
+              value={selectedCustomerId}
               onValueChange={(val) => val && onCustomerChange(val)}
             >
               <SelectTrigger className={errors.customerId ? 'border-[var(--spa-danger)]' : ''}>
@@ -155,7 +223,7 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
               </SelectTrigger>
               <SelectContent>
                 {customers.map((c) => (
-                  <SelectItem key={c.customerId} value={c.customerId}>
+                  <SelectItem key={c.id} value={c.id}>
                     {c.fullName} - {c.phone}
                   </SelectItem>
                 ))}
@@ -164,11 +232,54 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
             {errors.customerId && <p className="text-xs text-[var(--spa-danger)]">{errors.customerId.message}</p>}
           </div>
 
+          {/* Dịch vụ & Kỹ thuật viên */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="date" className="text-[var(--spa-text-primary)]">Ngày hẹn <span className="text-red-500">*</span></Label>
+              <Label className="text-[var(--spa-text-primary)]">Dịch vụ</Label>
+              <Select
+                value={selectedServiceId || '__none__'}
+                onValueChange={(val: string | null) => onServiceChange(val || '__none__')}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn dịch vụ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Chưa chọn —</SelectItem>
+                  {services.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[var(--spa-text-primary)]">Kỹ thuật viên</Label>
+              <Select
+                value={selectedStaffId || '__none__'}
+                onValueChange={(val: string | null) => onStaffChange(val || '__none__')}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn KTV" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Chưa chọn —</SelectItem>
+                  {staffList.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.code} - {s.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Ngày & Giờ */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-[var(--spa-text-primary)]">Ngày hẹn <span className="text-red-500">*</span></Label>
               <Input
-                id="date"
                 type="date"
                 {...register('date')}
                 className={errors.date ? 'border-[var(--spa-danger)]' : ''}
@@ -177,9 +288,8 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="startTime" className="text-[var(--spa-text-primary)]">Giờ bắt đầu <span className="text-red-500">*</span></Label>
+              <Label className="text-[var(--spa-text-primary)]">Giờ bắt đầu <span className="text-red-500">*</span></Label>
               <Input
-                id="startTime"
                 type="time"
                 {...register('startTime')}
                 className={errors.startTime ? 'border-[var(--spa-danger)]' : ''}
@@ -190,20 +300,17 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="endTime" className="text-[var(--spa-text-primary)]">Giờ kết thúc (Không bắt buộc)</Label>
+              <Label className="text-[var(--spa-text-primary)]">Giờ kết thúc</Label>
               <Input
-                id="endTime"
                 type="time"
                 {...register('endTime')}
-                className={errors.endTime ? 'border-[var(--spa-danger)]' : ''}
               />
-              {errors.endTime && <p className="text-xs text-[var(--spa-danger)]">{errors.endTime.message}</p>}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="status" className="text-[var(--spa-text-primary)]">Trạng thái</Label>
-              <Select 
-                value={selectedStatus} 
+              <Label className="text-[var(--spa-text-primary)]">Trạng thái</Label>
+              <Select
+                value={selectedStatus}
                 onValueChange={(val: any) => setValue('status', val, { shouldValidate: true })}
               >
                 <SelectTrigger>
@@ -224,41 +331,38 @@ export function AppointmentFormModal({ isOpen, onClose, appointment, customers, 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="deposit" className="text-[var(--spa-text-primary)]">Tiền đặt cọc (VND)</Label>
+            <Label className="text-[var(--spa-text-primary)]">Tiền đặt cọc (VND)</Label>
             <Input
-              id="deposit"
               type="number"
               placeholder="0"
               {...register('deposit')}
               className={errors.deposit ? 'border-[var(--spa-danger)]' : ''}
             />
-            {errors.deposit && <p className="text-xs text-[var(--spa-danger)]">{errors.deposit.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="notes" className="text-[var(--spa-text-primary)]">Ghi chú</Label>
+            <Label className="text-[var(--spa-text-primary)]">Ghi chú</Label>
             <Input
-              id="notes"
               placeholder="Ghi chú về khách hàng hoặc dịch vụ..."
               {...register('notes')}
             />
           </div>
 
           <DialogFooter className="pt-4">
-            <Button 
-              type="button" 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={onClose}
               className="border-[var(--spa-border)] text-[var(--spa-text-secondary)] hover:bg-[var(--spa-warm-100)]"
             >
               Hủy
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={isPending}
               className="bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
             >
-              {isPending ? 'Đang lưu...' : (isEditing ? 'Cập nhật' : 'Thêm mới')}
+              {isPending ? 'Đang lưu...' : isEditing ? 'Cập nhật' : 'Thêm mới'}
             </Button>
           </DialogFooter>
         </form>

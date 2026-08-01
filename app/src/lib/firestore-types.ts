@@ -81,7 +81,11 @@ export interface PaymentAccountDoc {
 export type LoyaltyTier = 'MEMBER' | 'SILVER' | 'GOLD' | 'PLATINUM';
 
 export interface CustomerDoc {
-  customerId: string;
+  /**
+   * Mã khách hàng hiển thị (e.g. "KH0001") — khác với Firestore doc.id
+   * Đây là mã nghiệp vụ để nhân viên tìm kiếm, KHÔNG phải primary key.
+   */
+  customerCode: string;
   fullName: string;
   phone: string;
   email: string | null;
@@ -100,7 +104,13 @@ export interface CustomerDoc {
   updatedAt: Timestamp;
 }
 
+/**
+ * Client-safe version của CustomerDoc.
+ * Timestamps đã được convert sang ISO string.
+ * `id` là Firestore document ID (primary key thực sự).
+ */
 export type ClientCustomerDoc = Omit<CustomerDoc, 'createdAt' | 'updatedAt' | 'birthday' | 'lastVisit'> & {
+  id: string;         // ← Firestore doc.id — đã thêm để loại bỏ workaround `& { id: string }`
   createdAt: string;
   updatedAt: string;
   birthday: string | null;
@@ -110,6 +120,16 @@ export type ClientCustomerDoc = Omit<CustomerDoc, 'createdAt' | 'updatedAt' | 'b
 export interface AppointmentDoc {
   customerId: string;
   customerName: string; // Denormalized
+  /**
+   * Dịch vụ được đặt — nullable để tương thích dữ liệu cũ và lịch hẹn chưa chọn dịch vụ
+   */
+  serviceId: string | null;
+  serviceName: string | null; // Denormalized
+  /**
+   * Kỹ thuật viên được chỉ định — nullable vì có thể chỉ định sau
+   */
+  staffId: string | null;
+  staffName: string | null; // Denormalized
   date: Timestamp;
   startTime: string;
   endTime: string | null;
@@ -131,6 +151,11 @@ export interface InvoiceItemEmbed {
 
 export interface InvoiceDoc {
   invoiceCode: string;
+  /**
+   * Tham chiếu ngược lại Lịch hẹn đã tạo ra hóa đơn này.
+   * Nullable để tương thích với hóa đơn tạo thủ công (không từ lịch hẹn).
+   */
+  appointmentId: string | null;
   date: Timestamp;
   customerId: string;
   customerName: string; // Denormalized
@@ -242,3 +267,25 @@ export const COLLECTIONS = {
   STOCK_TRANSACTIONS: 'stockTransactions',
   COUNTERS: 'counters',
 } as const;
+
+// ---- Loyalty Tier Thresholds ----
+
+/**
+ * Tính hạng thẻ thành viên dựa trên tổng chi tiêu (VND).
+ * Dùng trong createInvoice() để tự động thăng hạng sau mỗi giao dịch.
+ */
+export function calculateLoyaltyTier(totalSpent: number): LoyaltyTier {
+  if (totalSpent >= 50_000_000) return 'PLATINUM';
+  if (totalSpent >= 20_000_000) return 'GOLD';
+  if (totalSpent >=  5_000_000) return 'SILVER';
+  return 'MEMBER';
+}
+
+/**
+ * Tính điểm thưởng tích lũy từ số tiền thanh toán.
+ * Tỷ lệ: 1 điểm / 10.000 VND (làm tròn xuống).
+ * Có thể thay bằng config từ Firestore settings sau này.
+ */
+export function calculateRewardPoints(totalAmount: number): number {
+  return Math.floor(totalAmount / 10_000);
+}

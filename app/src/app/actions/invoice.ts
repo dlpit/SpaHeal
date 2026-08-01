@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-types";
 import type { ServiceDoc, StaffDoc, PaymentMethodDoc, PaymentAccountDoc, CustomerDoc, InvoiceDoc, InvoiceItemEmbed } from "@/lib/firestore-types";
+import { calculateLoyaltyTier, calculateRewardPoints } from "@/lib/firestore-types";
 import { invoiceFormSchema, InvoiceFormValues } from "@/lib/schemas/invoice";
 import { generateInvoiceCode, serverTimestamp, toTimestamp, serializeDoc } from "@/lib/firestore-helpers";
 import { revalidatePath } from "next/cache";
@@ -88,7 +89,7 @@ export async function getInvoices() {
     const snapshot = await db
       .collection(COLLECTIONS.INVOICES)
       .orderBy('date', 'desc')
-      .limit(100) // Added limit to prevent memory exhaustion
+      .limit(100) // Giới hạn an toàn để tránh OOM
       .get();
 
     const invoices = snapshot.docs.map((doc) => {
@@ -105,14 +106,14 @@ export async function getInvoices() {
 
 export async function createInvoice(data: InvoiceFormValues) {
   try {
-    // Validate on server
+    // Validate trên server
     const validData = invoiceFormSchema.parse(data);
 
-    // Calculate totals on server to prevent tampering
+    // Tính tổng tiền trên server để tránh giả mạo từ client
     let subTotal = 0;
     const itemsForInvoice: InvoiceItemEmbed[] = [];
 
-    // Fetch service details for denormalization
+    // Fetch service details để denormalize
     const serviceIds = validData.items.map(item => item.serviceId);
     const servicePromises = serviceIds.map(id =>
       db.collection(COLLECTIONS.SERVICES).doc(id).get()
@@ -142,10 +143,10 @@ export async function createInvoice(data: InvoiceFormValues) {
 
     const discount = validData.discount || 0;
     const surcharge = validData.surcharge || 0;
-    // Ensure totalAmount is never negative
+    // Đảm bảo totalAmount không bao giờ âm
     const totalAmount = Math.max(0, subTotal - discount + surcharge);
 
-    // Fetch denormalized names
+    // Fetch tên denormalized
     const [customerDoc, staffDoc, paymentMethodDoc, paymentAccountDoc] = await Promise.all([
       db.collection(COLLECTIONS.CUSTOMERS).doc(validData.customerId).get(),
       validData.staffId
@@ -168,15 +169,21 @@ export async function createInvoice(data: InvoiceFormValues) {
     const pmData = paymentMethodDoc?.exists ? (paymentMethodDoc.data() as PaymentMethodDoc) : null;
     const paData = paymentAccountDoc?.exists ? (paymentAccountDoc.data() as PaymentAccountDoc) : null;
 
-    // Generate invoice code
+    // Generate mã hóa đơn
     const invoiceDate = validData.date;
     const invoiceCode = await generateInvoiceCode(invoiceDate);
 
-    // Use Firestore transaction for atomicity
+    // Tính toán stats sau khi cộng thêm giao dịch mới
+    const newTotalSpent = (customerData.totalSpent || 0) + totalAmount;
+    const newRewardPoints = (customerData.rewardPoints || 0) + calculateRewardPoints(totalAmount);
+    const newLoyaltyTier = calculateLoyaltyTier(newTotalSpent);
+
+    // Dùng Firestore batch để đảm bảo atomicity
     const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc();
 
     const invoiceData: Omit<InvoiceDoc, 'createdAt' | 'updatedAt'> & { createdAt: FieldValue; updatedAt: FieldValue } = {
       invoiceCode,
+      appointmentId: validData.appointmentId || null,
       date: toTimestamp(invoiceDate),
       customerId: validData.customerId,
       customerName: customerData.fullName,
@@ -197,23 +204,36 @@ export async function createInvoice(data: InvoiceFormValues) {
       updatedAt: serverTimestamp(),
     };
 
-    // Batch write: create invoice + update customer stats
+    // Batch write: tạo invoice + cập nhật customer stats
     const batch = db.batch();
     
     batch.set(invoiceRef, invoiceData);
 
-    // Update customer stats
+    // Cập nhật customer stats (bao gồm rewardPoints và loyaltyTier)
     const customerRef = db.collection(COLLECTIONS.CUSTOMERS).doc(validData.customerId);
     batch.update(customerRef, {
       totalSpent: FieldValue.increment(totalAmount),
       visitCount: FieldValue.increment(1),
       lastVisit: toTimestamp(invoiceDate),
+      rewardPoints: FieldValue.increment(calculateRewardPoints(totalAmount)),
+      loyaltyTier: newLoyaltyTier, // Tự động thăng hạng nếu đủ điều kiện
       updatedAt: serverTimestamp(),
     });
+
+    // Nếu hóa đơn được tạo từ lịch hẹn → tự động chuyển trạng thái sang COMPLETED
+    if (validData.appointmentId) {
+      const appointmentRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(validData.appointmentId);
+      batch.update(appointmentRef, {
+        status: 'COMPLETED',
+        updatedAt: serverTimestamp(),
+      });
+    }
 
     await batch.commit();
 
     revalidatePath('/doanh-thu');
+    revalidatePath('/lich-hen');
+    revalidatePath('/khach-hang');
     revalidatePath('/');
 
     return {

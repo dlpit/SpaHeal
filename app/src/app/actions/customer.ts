@@ -6,16 +6,21 @@ import { getNextSequence, serializeDoc, serverTimestamp, toTimestamp } from '@/l
 import { CustomerFormValues } from '@/lib/schemas/customer';
 import { revalidatePath } from 'next/cache';
 
-export async function getCustomers() {
+export async function getCustomers(): Promise<ClientCustomerDoc[]> {
   try {
     const snapshot = await db.collection(COLLECTIONS.CUSTOMERS)
-      .orderBy('createdAt', 'desc')
-      .limit(500)
+      .where('isActive', '==', true)
       .get();
       
-    const customers = snapshot.docs.map(doc => 
-      serializeDoc<CustomerDoc & Record<string, unknown>>(doc.id, doc.data() as CustomerDoc & Record<string, unknown>) as unknown as ClientCustomerDoc & { id: string }
-    );
+    // Sort in-memory để tránh composite index (theo pattern dự án)
+    const customers = snapshot.docs
+      .map(doc =>
+        serializeDoc<CustomerDoc & Record<string, unknown>>(
+          doc.id,
+          doc.data() as CustomerDoc & Record<string, unknown>
+        ) as unknown as ClientCustomerDoc
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     
     return customers;
   } catch (error) {
@@ -27,10 +32,11 @@ export async function getCustomers() {
 export async function createCustomer(data: CustomerFormValues) {
   try {
     const sequence = await getNextSequence('customer_seq');
-    const customerId = `KH${sequence.toString().padStart(4, '0')}`;
+    // Mã hiển thị nghiệp vụ — human-readable, khác với Firestore doc.id
+    const customerCode = `KH${sequence.toString().padStart(4, '0')}`;
     
     const customerData: CustomerDoc = {
-      customerId,
+      customerCode,
       fullName: data.fullName,
       phone: data.phone,
       email: data.email || null,
@@ -52,7 +58,7 @@ export async function createCustomer(data: CustomerFormValues) {
     const docRef = await db.collection(COLLECTIONS.CUSTOMERS).add(customerData);
     
     revalidatePath('/khach-hang');
-    return { success: true, id: docRef.id, customerId };
+    return { success: true, id: docRef.id, customerCode };
   } catch (error) {
     console.error('Error creating customer:', error);
     throw new Error('Không thể tạo khách hàng');
