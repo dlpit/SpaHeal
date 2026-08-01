@@ -1,13 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ClientCustomerDoc } from '@/lib/firestore-types';
 import { CustomerFormDialog } from './customer-form-dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { formatCurrency } from '@/lib/format';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, Edit2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface CustomerTableProps {
   customers: (ClientCustomerDoc & { id: string })[];
@@ -21,13 +28,20 @@ export function CustomerTable({ customers }: CustomerTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  const filteredCustomers = customers.filter(c => 
-    c.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.phone.includes(searchTerm)
-  );
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(c => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchName = c.fullName?.toLowerCase().includes(searchLower);
+      const matchPhone = c.phone?.includes(searchTerm);
+      return matchName || matchPhone;
+    });
+  }, [customers, searchTerm]);
 
-  const totalPages = Math.ceil(filteredCustomers.length / pageSize);
-  const paginatedCustomers = filteredCustomers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize));
+  
+  const paginatedCustomers = useMemo(() => {
+    return filteredCustomers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filteredCustomers, currentPage, pageSize]);
 
   const openEdit = (customer: ClientCustomerDoc & { id: string }) => {
     setSelectedCustomer(customer);
@@ -41,11 +55,11 @@ export function CustomerTable({ customers }: CustomerTableProps) {
 
   const getTierBadge = (tier: string) => {
     switch(tier) {
-      case 'PLATINUM': return <Badge className="bg-slate-800">Platinum</Badge>;
-      case 'GOLD': return <Badge className="bg-yellow-500 hover:bg-yellow-600">Gold</Badge>;
-      case 'SILVER': return <Badge className="bg-gray-400 hover:bg-gray-500">Silver</Badge>;
-      case 'MEMBER': return <Badge variant="outline">Thành viên</Badge>;
-      default: return <Badge variant="outline">Thành viên</Badge>;
+      case 'PLATINUM': return <Badge className="bg-[var(--spa-text-primary)] text-[var(--spa-champagne-300)]">Platinum</Badge>;
+      case 'GOLD': return <Badge className="bg-[var(--spa-champagne-300)] text-white">Gold</Badge>;
+      case 'SILVER': return <Badge className="bg-[var(--spa-text-secondary)] text-white">Silver</Badge>;
+      case 'MEMBER': return <Badge variant="outline" className="bg-gray-50/50">Thành viên</Badge>;
+      default: return <Badge variant="outline" className="bg-gray-50/50">Thành viên</Badge>;
     }
   }
 
@@ -64,7 +78,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
             }}
           />
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={openCreate} className="bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white">
           <Plus className="mr-2 h-4 w-4" /> Thêm khách hàng
         </Button>
       </div>
@@ -79,6 +93,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
               <TableHead className="font-semibold">Hạng</TableHead>
               <TableHead className="font-semibold">Chi tiêu</TableHead>
               <TableHead className="font-semibold">Lượt đến</TableHead>
+              <TableHead className="text-right font-semibold">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -99,8 +114,22 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                   <TableCell className="py-4 font-medium text-foreground">{customer.fullName}</TableCell>
                   <TableCell className="py-4 text-muted-foreground">{customer.phone}</TableCell>
                   <TableCell className="py-4">{getTierBadge(customer.loyaltyTier)}</TableCell>
-                  <TableCell className="py-4">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(customer.totalSpent || 0)}</TableCell>
+                  <TableCell className="py-4">{formatCurrency(customer.totalSpent)}</TableCell>
                   <TableCell className="py-4">{customer.visitCount || 0}</TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="inline-flex h-8 w-8 p-0 items-center justify-center rounded-md hover:bg-[var(--spa-warm-50)] focus-visible:outline-none transition-colors">
+                        <span className="sr-only">Mở menu</span>
+                        <MoreHorizontal className="h-4 w-4 text-[var(--spa-text-secondary)]" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[160px]">
+                        <DropdownMenuItem onClick={() => openEdit(customer)} className="cursor-pointer">
+                          <Edit2 className="mr-2 h-4 w-4 text-[var(--spa-champagne-300)]" />
+                          <span>Sửa / Chi tiết</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
                 </TableRow>
               ))
             )}
