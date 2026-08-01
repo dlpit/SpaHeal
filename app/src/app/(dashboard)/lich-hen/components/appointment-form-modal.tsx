@@ -21,6 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { CustomerCombobox } from '@/components/khach-hang/customer-combobox';
+import { CustomerFormDialog } from '@/components/khach-hang/customer-form-dialog';
 import { appointmentSchema, AppointmentFormValues } from '@/lib/schemas/appointment';
 import {
   createAppointment,
@@ -53,6 +55,7 @@ export function AppointmentFormModal({
   const [error, setError] = useState<string | null>(null);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
 
   const isEditing = !!appointment;
 
@@ -166,8 +169,8 @@ export function AppointmentFormModal({
 
   const onCustomerChange = (val: string) => {
     setValue('customerId', val, { shouldValidate: true });
-    const c = customers.find(x => x.id === val);
-    if (c) setValue('customerName', c.fullName, { shouldValidate: true });
+    // Dữ liệu 'c' sẽ được set thông qua onCustomerSelected của Combobox
+    // để đảm bảo luôn lấy được data kể cả khi khách hàng load động từ API.
   };
 
   const onServiceChange = (val: string) => {
@@ -214,21 +217,14 @@ export function AppointmentFormModal({
           {/* Khách hàng */}
           <div className="space-y-2">
             <Label className="text-[var(--spa-text-primary)]">Khách hàng <span className="text-red-500">*</span></Label>
-            <Select
+            <CustomerCombobox
               value={selectedCustomerId}
-              onValueChange={(val) => val && onCustomerChange(val)}
-            >
-              <SelectTrigger className={errors.customerId ? 'border-[var(--spa-danger)]' : ''}>
-                <SelectValue placeholder="Chọn khách hàng" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.fullName} - {c.phone}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              initialCustomers={customers}
+              error={!!errors.customerId}
+              onValueChange={(val) => onCustomerChange(val)}
+              onCustomerSelected={(c) => setValue('customerName', c.fullName, { shouldValidate: true })}
+              onAddNew={() => setIsCustomerModalOpen(true)}
+            />
             {errors.customerId && <p className="text-xs text-[var(--spa-danger)]">{errors.customerId.message}</p>}
           </div>
 
@@ -241,7 +237,13 @@ export function AppointmentFormModal({
                 onValueChange={(val: string | null) => onServiceChange(val || '__none__')}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn dịch vụ" />
+                  <span data-slot="select-value" className={`flex flex-1 text-left truncate ${!selectedServiceId ? 'text-muted-foreground' : ''}`}>
+                    {(() => {
+                      if (!selectedServiceId) return "— Chưa chọn —";
+                      const s = services.find(x => x.id === selectedServiceId);
+                      return s ? s.name : "— Chưa chọn —";
+                    })()}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Chưa chọn —</SelectItem>
@@ -261,7 +263,13 @@ export function AppointmentFormModal({
                 onValueChange={(val: string | null) => onStaffChange(val || '__none__')}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn KTV" />
+                  <span data-slot="select-value" className={`flex flex-1 text-left truncate ${!selectedStaffId ? 'text-muted-foreground' : ''}`}>
+                    {(() => {
+                      if (!selectedStaffId) return "— Chưa chọn —";
+                      const s = staffList.find(x => x.id === selectedStaffId);
+                      return s ? `${s.code} - ${s.fullName}` : "— Chưa chọn —";
+                    })()}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Chưa chọn —</SelectItem>
@@ -314,7 +322,18 @@ export function AppointmentFormModal({
                 onValueChange={(val: any) => setValue('status', val, { shouldValidate: true })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Trạng thái" />
+                  <span data-slot="select-value" className="flex flex-1 text-left truncate">
+                    {{
+                      CONFIRMED: 'Đã xác nhận',
+                      ARRIVED: 'Đã đến',
+                      IN_PROGRESS: 'Đang làm',
+                      COMPLETED: 'Hoàn thành',
+                      CANCELLED: 'Đã hủy',
+                      RESCHEDULED: 'Dời lịch',
+                      NO_SHOW: 'Không đến',
+                      DEPOSIT: 'Đã đặt cọc',
+                    }[selectedStatus] || "Trạng thái"}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="CONFIRMED">Đã xác nhận</SelectItem>
@@ -367,6 +386,17 @@ export function AppointmentFormModal({
           </DialogFooter>
         </form>
       </DialogContent>
+
+      <CustomerFormDialog
+        open={isCustomerModalOpen}
+        onOpenChange={(open) => {
+          setIsCustomerModalOpen(open);
+          // If closing and we need to refresh list, we could trigger a re-render
+          // or rely on server action revalidating path and React fetching fresh data,
+          // but for now the user can just search their new name.
+        }}
+        customer={null}
+      />
     </Dialog>
   );
 }

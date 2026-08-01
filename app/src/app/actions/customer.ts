@@ -93,3 +93,39 @@ export async function updateCustomer(id: string, data: CustomerFormValues) {
     throw new Error('Không thể cập nhật khách hàng');
   }
 }
+
+export async function searchCustomers(query: string = ''): Promise<ClientCustomerDoc[]> {
+  try {
+    const q = query.trim().toLowerCase();
+    
+    const snapshot = await db.collection(COLLECTIONS.CUSTOMERS)
+      .where('isActive', '==', true)
+      .get();
+      
+    let customers = snapshot.docs
+      .map(doc =>
+        serializeDoc<CustomerDoc & Record<string, unknown>>(
+          doc.id,
+          doc.data() as CustomerDoc & Record<string, unknown>
+        ) as unknown as ClientCustomerDoc
+      );
+
+    if (q) {
+      customers = customers.filter(c => 
+        (c.fullName || '').toLowerCase().includes(q) || 
+        (c.phone || '').includes(q) ||
+        (c.customerCode && c.customerCode.toLowerCase().includes(q))
+      );
+    }
+    
+    // Sắp xếp mới nhất và giới hạn 20 kết quả để UI Combobox mượt mà
+    return customers
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 20);
+      
+  } catch (error) {
+    console.error('Error searching customers:', error);
+    throw new Error('Không thể tìm kiếm khách hàng');
+  }
+}
+
