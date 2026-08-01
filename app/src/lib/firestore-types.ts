@@ -78,21 +78,34 @@ export interface PaymentAccountDoc {
   updatedAt: Timestamp;
 }
 
+export type LoyaltyTier = 'MEMBER' | 'SILVER' | 'GOLD' | 'PLATINUM';
+
 export interface CustomerDoc {
+  customerId: string;
   fullName: string;
   phone: string;
   email: string | null;
   address: string | null;
   gender: Gender | null;
   birthday: Timestamp | null;
+  skinCondition: string | null;
+  medicalNotes: string | null;
+  loyaltyTier: LoyaltyTier;
+  rewardPoints: number;
   totalSpent: number;
   visitCount: number;
   lastVisit: Timestamp | null;
-  notes: string | null;
   isActive: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
+
+export type ClientCustomerDoc = Omit<CustomerDoc, 'createdAt' | 'updatedAt' | 'birthday' | 'lastVisit'> & {
+  createdAt: string;
+  updatedAt: string;
+  birthday: string | null;
+  lastVisit: string | null;
+};
 
 export interface AppointmentDoc {
   customerId: string;
