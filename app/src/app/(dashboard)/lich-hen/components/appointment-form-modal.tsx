@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 import { CustomerCombobox } from '@/components/khach-hang/customer-combobox';
 import { CustomerFormDialog } from '@/components/khach-hang/customer-form-dialog';
 import { ServiceCombobox } from '@/components/dich-vu/service-combobox';
-import { appointmentSchema, AppointmentFormValues } from '@/lib/schemas/appointment';
+import { appointmentSchema, AppointmentFormValues, AppointmentFormInput } from '@/lib/schemas/appointment';
 import {
   createAppointment,
   updateAppointment,
@@ -76,7 +76,7 @@ export function AppointmentFormModal({
     watch,
     reset,
     formState: { errors },
-  } = useForm<AppointmentFormValues>({
+  } = useForm<AppointmentFormInput, any, AppointmentFormValues>({
     resolver: zodResolver(appointmentSchema),
     defaultValues: {
       customerId: '',
@@ -309,13 +309,13 @@ export function AppointmentFormModal({
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {watch('date') 
-                    ? format(parse(watch('date') as string, 'yyyy-MM-dd', new Date()), "dd/MM/yyyy") 
+                    ? format(parse(watch('date') as unknown as string, 'yyyy-MM-dd', new Date()), "dd/MM/yyyy") 
                     : <span>Chọn ngày</span>}
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0 z-[100]">
                   <Calendar
                     mode="single"
-                    selected={watch('date') ? parse(watch('date') as string, 'yyyy-MM-dd', new Date()) : undefined}
+                    selected={watch('date') ? parse(watch('date') as unknown as string, 'yyyy-MM-dd', new Date()) : undefined}
                     onSelect={(date) => {
                       if (date) {
                         setValue('date', format(date, 'yyyy-MM-dd') as any, { shouldValidate: true });
