@@ -5,6 +5,12 @@ export const appointmentSchema = z.object({
   customerName: z.string().min(1, 'Tên khách hàng không được để trống'), // Denormalized
   serviceId: z.string().optional().nullable(),
   serviceName: z.string().optional().nullable(), // Denormalized — auto-fill khi chọn dịch vụ
+  services: z.array(z.object({
+    serviceId: z.string(),
+    serviceName: z.string(),
+    quantity: z.number().min(1, 'Số lượng tối thiểu là 1'),
+    price: z.number().min(0, 'Giá không hợp lệ'),
+  })).optional(),
   staffId: z.string().optional().nullable(),
   staffName: z.string().optional().nullable(), // Denormalized — auto-fill khi chọn kỹ thuật viên
   date: z.coerce.date({
@@ -24,7 +30,10 @@ export const appointmentSchema = z.object({
     'RESCHEDULED',
     'NO_SHOW',
     'DEPOSIT'
-  ])
+  ]),
+  cancelReason: z.string().optional().nullable(),
+  depositResolution: z.enum(['REFUNDED', 'CONFISCATED']).optional().nullable(),
+  invoiceId: z.string().optional().nullable(),
 });
 
 export type AppointmentFormValues = z.infer<typeof appointmentSchema>;

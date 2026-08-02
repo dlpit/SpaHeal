@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Dialog,
@@ -24,7 +24,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format, parse } from 'date-fns';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CustomerCombobox } from '@/components/khach-hang/customer-combobox';
 import { CustomerFormDialog } from '@/components/khach-hang/customer-form-dialog';
@@ -75,14 +75,14 @@ export function AppointmentFormModal({
     setValue,
     watch,
     reset,
+    control,
     formState: { errors },
   } = useForm<AppointmentFormInput, any, AppointmentFormValues>({
     resolver: zodResolver(appointmentSchema),
     defaultValues: {
       customerId: '',
       customerName: '',
-      serviceId: null,
-      serviceName: null,
+      services: [],
       staffId: null,
       staffName: null,
       date: formatDateForInput(new Date()) as any,
@@ -93,6 +93,18 @@ export function AppointmentFormModal({
       status: 'CONFIRMED',
     },
   });
+
+  const { fields: serviceFields, append: appendService, remove: removeService } = useFieldArray({
+    control,
+    name: "services",
+  });
+
+  const servicesWatch = watch('services') || [];
+  const subtotal = servicesWatch.reduce((acc, curr) => acc + ((curr.quantity || 0) * (curr.price || 0)), 0);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
+  };
 
   // Fetch staff khi modal mở lần đầu
   useEffect(() => {
@@ -106,11 +118,17 @@ export function AppointmentFormModal({
   useEffect(() => {
     if (isOpen) {
       if (appointment) {
+        let initialServices: { serviceId: string; serviceName: string; quantity: number; price: number }[] = [];
+        if (appointment.services && appointment.services.length > 0) {
+          initialServices = appointment.services;
+        } else if (appointment.serviceId && appointment.serviceName) {
+          initialServices = [{ serviceId: appointment.serviceId, serviceName: appointment.serviceName, quantity: 1, price: 0 }];
+        }
+
         reset({
           customerId: appointment.customerId,
           customerName: appointment.customerName,
-          serviceId: appointment.serviceId || null,
-          serviceName: appointment.serviceName || null,
+          services: initialServices,
           staffId: appointment.staffId || null,
           staffName: appointment.staffName || null,
           date: formatDateForInput(appointment.date) as any,
@@ -141,8 +159,7 @@ export function AppointmentFormModal({
         reset({
           customerId: '',
           customerName: '',
-          serviceId: null,
-          serviceName: null,
+          services: [],
           staffId: null,
           staffName: null,
           date: initialDate as any,
@@ -181,25 +198,11 @@ export function AppointmentFormModal({
     });
   };
 
-  const selectedCustomerId = watch('customerId');
   const selectedStatus = watch('status');
-  const selectedServiceId = watch('serviceId');
   const selectedStaffId = watch('staffId');
 
   const onCustomerChange = (val: string) => {
     setValue('customerId', val, { shouldValidate: true });
-    // Dữ liệu 'c' sẽ được set thông qua onCustomerSelected của Combobox
-    // để đảm bảo luôn lấy được data kể cả khi khách hàng load động từ API.
-  };
-
-  const onServiceChange = (val: string) => {
-    if (val === '__none__') {
-      setValue('serviceId', null);
-      setValue('serviceName', null);
-      return;
-    }
-    setValue('serviceId', val, { shouldValidate: true });
-    // Dữ liệu serviceName sẽ được set qua onServiceSelected của Combobox
   };
 
   const onStaffChange = (val: string) => {
@@ -216,7 +219,7 @@ export function AppointmentFormModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[520px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[600px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
           <DialogTitle className="text-[var(--spa-text-primary)] font-serif text-xl">
             {isEditing ? 'Chỉnh sửa lịch hẹn' : 'Thêm lịch hẹn mới'}
@@ -237,7 +240,7 @@ export function AppointmentFormModal({
           <div className="space-y-2">
             <Label className="text-[var(--spa-text-primary)]">Khách hàng <span className="text-red-500">*</span></Label>
             <CustomerCombobox
-              value={selectedCustomerId}
+              value={watch('customerId')}
               initialCustomers={customers}
               error={!!errors.customerId}
               onValueChange={(val) => onCustomerChange(val)}
@@ -247,47 +250,93 @@ export function AppointmentFormModal({
             {errors.customerId && <p className="text-xs text-[var(--spa-danger)]">{errors.customerId.message}</p>}
           </div>
 
-          {/* Dịch vụ & Kỹ thuật viên */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-[var(--spa-text-primary)]">Dịch vụ</Label>
-              <ServiceCombobox
-                value={selectedServiceId}
-                initialServices={
-                  selectedServiceId && watch('serviceName')
-                    ? [{ id: selectedServiceId, name: watch('serviceName') as string, code: '', price: 0 }]
-                    : []
-                }
-                onValueChange={(val) => onServiceChange(val)}
-                onServiceSelected={(s) => setValue('serviceName', s.name, { shouldValidate: true })}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label className="text-[var(--spa-text-primary)]">Kỹ thuật viên</Label>
+            <Select
+              value={selectedStaffId || '__none__'}
+              onValueChange={(val: string | null) => onStaffChange(val || '__none__')}
+            >
+              <SelectTrigger>
+                <span data-slot="select-value" className={`flex flex-1 text-left truncate ${!selectedStaffId ? 'text-muted-foreground' : ''}`}>
+                  {(() => {
+                    if (!selectedStaffId) return "— Chưa chọn —";
+                    const s = staffList.find(x => x.id === selectedStaffId);
+                    return s ? `${s.code} - ${s.fullName}` : "— Chưa chọn —";
+                  })()}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— Chưa chọn —</SelectItem>
+                {staffList.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.code} - {s.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div className="space-y-2">
-              <Label className="text-[var(--spa-text-primary)]">Kỹ thuật viên</Label>
-              <Select
-                value={selectedStaffId || '__none__'}
-                onValueChange={(val: string | null) => onStaffChange(val || '__none__')}
-              >
-                <SelectTrigger>
-                  <span data-slot="select-value" className={`flex flex-1 text-left truncate ${!selectedStaffId ? 'text-muted-foreground' : ''}`}>
-                    {(() => {
-                      if (!selectedStaffId) return "— Chưa chọn —";
-                      const s = staffList.find(x => x.id === selectedStaffId);
-                      return s ? `${s.code} - ${s.fullName}` : "— Chưa chọn —";
-                    })()}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— Chưa chọn —</SelectItem>
-                  {staffList.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.code} - {s.fullName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <Label className="text-[var(--spa-text-primary)]">Dịch vụ</Label>
+              <Button type="button" variant="outline" size="sm" onClick={() => appendService({ serviceId: '', serviceName: '', quantity: 1, price: 0 })}>
+                <Plus className="size-4 mr-2" /> Thêm dịch vụ
+              </Button>
             </div>
+            
+            {serviceFields.map((field, index) => (
+              <div key={field.id} className="grid grid-cols-[1fr_6rem_7rem_auto] items-center gap-2 bg-[var(--spa-warm-100)] p-2 rounded-md">
+                <div className="min-w-0 space-y-1">
+                  <ServiceCombobox
+                    value={watch(`services.${index}.serviceId`)}
+                    initialServices={
+                      watch(`services.${index}.serviceId`) && watch(`services.${index}.serviceName`)
+                        ? [{ id: watch(`services.${index}.serviceId`)!, name: watch(`services.${index}.serviceName`)!, code: '', price: watch(`services.${index}.price`)! }]
+                        : []
+                    }
+                    onValueChange={(val) => {
+                      if (val === '__none__') {
+                        setValue(`services.${index}.serviceId`, '');
+                        setValue(`services.${index}.serviceName`, '');
+                        setValue(`services.${index}.price`, 0);
+                      } else {
+                        setValue(`services.${index}.serviceId`, val, { shouldValidate: true });
+                      }
+                    }}
+                    onServiceSelected={(s) => {
+                      setValue(`services.${index}.serviceName`, s.name, { shouldValidate: true });
+                      setValue(`services.${index}.price`, s.price, { shouldValidate: true });
+                    }}
+                  />
+                  {errors.services?.[index]?.serviceId && <p className="text-xs text-[var(--spa-danger)]">{errors.services[index].serviceId?.message}</p>}
+                </div>
+                
+                <div className="space-y-1">
+                  <Input 
+                    type="number" 
+                    min={1} 
+                    {...register(`services.${index}.quantity`, { valueAsNumber: true })} 
+                    className={errors.services?.[index]?.quantity ? 'border-[var(--spa-danger)]' : ''}
+                  />
+                </div>
+                
+                <div className="pt-2 text-right">
+                  <span className="text-sm font-medium text-[var(--spa-text-primary)]">
+                    {formatCurrency((watch(`services.${index}.quantity`) || 0) * (watch(`services.${index}.price`) || 0))}
+                  </span>
+                </div>
+                
+                <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => removeService(index)}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+            
+            <div className="flex justify-between items-center py-2 px-3 border-t border-[var(--spa-border)] mt-2">
+              <span className="font-medium text-[var(--spa-text-primary)]">Tổng tạm tính:</span>
+              <span className="font-bold text-lg text-[var(--spa-primary)]">{formatCurrency(subtotal)}</span>
+            </div>
+            {errors.services?.root && <p className="text-xs text-[var(--spa-danger)]">{errors.services.root.message}</p>}
           </div>
 
           {/* Ngày & Giờ */}

@@ -82,12 +82,12 @@ export function ServiceCombobox({
     }}>
       <PopoverTrigger
         className={cn(
-          "flex w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 h-8",
+          "flex w-full overflow-hidden items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 h-8",
           error && "border-destructive ring-3 ring-destructive/20",
           !selectedService && "text-muted-foreground"
         )}
       >
-        <span className="truncate">
+        <span className="flex-1 text-left truncate">
           {selectedService
             ? `${selectedService.name} - ${selectedService.code} - ${formatCurrency(selectedService.price)}`
             : "— Chưa chọn —"}

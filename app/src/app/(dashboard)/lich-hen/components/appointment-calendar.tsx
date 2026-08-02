@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { CustomCalendarGrid } from './custom-calendar-grid';
 import { AppointmentFormModal } from './appointment-form-modal';
 import { InvoiceFromAppointmentDialog } from './invoice-from-appointment-dialog';
+import { CancelAppointmentModal } from './cancel-appointment-modal';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,15 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FilePlus, Pencil, User, Wrench, Clock, CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { FilePlus, Pencil, User, Wrench, Clock, CalendarDays, Plus, ChevronLeft, ChevronRight, XCircle } from 'lucide-react';
 
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -43,6 +52,8 @@ type ViewMode = 'month' | 'week' | 'day' | 'list';
 export function AppointmentCalendar({ initialAppointments, customers }: AppointmentCalendarProps) {
   const [activeView, setActiveView] = useState<ViewMode>('week');
   const [isMounted, setIsMounted] = useState(false);
+  const [showCancelled, setShowCancelled] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [currentDate, setCurrentDate] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -131,9 +142,13 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
     setIsDetailOpen(true);
   };
 
+  const filteredAppointments = useMemo(() => {
+    return initialAppointments.filter(app => showCancelled || app.status !== 'CANCELLED');
+  }, [initialAppointments, showCancelled]);
+
   // FullCalendar event adapters
   const fcEvents = useMemo(() => {
-    return initialAppointments.map((app) => {
+    return filteredAppointments.map((app) => {
       const d = new Date(app.date);
       const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const start = `${dateStr}T${app.startTime}:00`;
@@ -141,11 +156,12 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       const statusInfo = STATUS_LABELS[app.status] || { label: app.status, color: 'var(--spa-blush-300)' };
       return {
         id: app.id,
-        title: `${app.customerName}${app.serviceName ? ` · ${app.serviceName}` : ''}`,
+        title: `${app.customerName}${app.services && app.services.length > 0 ? ` · ${app.services.map(s => s.serviceName).join(', ')}` : app.serviceName ? ` · ${app.serviceName}` : ''}`,
         start,
         end,
         backgroundColor: statusInfo.color,
         borderColor: statusInfo.color,
+        classNames: app.status === 'CANCELLED' ? ['opacity-50', 'line-through'] : [],
         extendedProps: { ...app },
       };
     });
@@ -219,20 +235,30 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
         </div>
 
         {/* View toggle */}
-        <div className="flex items-center gap-0.5 bg-[var(--spa-warm-50)] rounded-lg p-1 border border-[var(--spa-border)]">
-          {(['month', 'week', 'day', 'list'] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setActiveView(mode)}
-              className={`px-4 py-1.5 text-sm rounded-md transition-colors font-medium capitalize ${
-                activeView === mode
-                  ? 'bg-[var(--spa-blush-300)] text-white shadow-sm'
-                  : 'text-[var(--spa-text-secondary)] hover:bg-[var(--spa-warm-100)]'
-              }`}
-            >
-              {mode === 'month' ? 'Tháng' : mode === 'week' ? 'Tuần' : mode === 'day' ? 'Ngày' : 'DS'}
-            </button>
-          ))}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center space-x-2 hidden sm:flex">
+            <Switch
+              id="show-cancelled"
+              checked={showCancelled}
+              onCheckedChange={setShowCancelled}
+            />
+            <Label htmlFor="show-cancelled" className="text-sm cursor-pointer text-[var(--spa-text-secondary)]">Xem lịch đã hủy</Label>
+          </div>
+          <div className="flex items-center gap-0.5 bg-[var(--spa-warm-50)] rounded-lg p-1 border border-[var(--spa-border)]">
+            {(['month', 'week', 'day', 'list'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setActiveView(mode)}
+                className={`px-4 py-1.5 text-sm rounded-md transition-colors font-medium capitalize ${
+                  activeView === mode
+                    ? 'bg-[var(--spa-blush-300)] text-white shadow-sm'
+                    : 'text-[var(--spa-text-secondary)] hover:bg-[var(--spa-warm-100)]'
+                }`}
+              >
+                {mode === 'month' ? 'Tháng' : mode === 'week' ? 'Tuần' : mode === 'day' ? 'Ngày' : 'DS'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       
@@ -241,7 +267,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       {/* Conditional Rendering */}
       {activeView === 'week' || activeView === 'day' ? (
         <CustomCalendarGrid
-          appointments={initialAppointments}
+          appointments={filteredAppointments}
           currentDate={currentDate}
           viewMode={activeView}
           onCellClick={handleCellClick}
@@ -334,7 +360,19 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                   </div>
                 </div>
 
-                {detailApp.serviceName && (
+                {(detailApp.services && detailApp.services.length > 0) ? (
+                  <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-[var(--spa-border)]">
+                    <Wrench className="w-4 h-4 text-[var(--spa-blush-300)] shrink-0 mt-1" />
+                    <div>
+                      <p className="text-xs text-[var(--spa-text-secondary)] mb-1">{detailApp.staffName ? `KTV: ${detailApp.staffName}` : 'Dịch vụ'}</p>
+                      {detailApp.services.map((s, idx) => (
+                        <p key={idx} className="font-medium text-[var(--spa-text-primary)]">
+                          {s.serviceName} {s.quantity > 1 ? `(x${s.quantity})` : ''}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ) : detailApp.serviceName ? (
                   <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-[var(--spa-border)]">
                     <Wrench className="w-4 h-4 text-[var(--spa-blush-300)] shrink-0" />
                     <div>
@@ -342,7 +380,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                       <p className="text-xs text-[var(--spa-text-secondary)]">{detailApp.staffName ? `KTV: ${detailApp.staffName}` : 'Dịch vụ'}</p>
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-[var(--spa-border)]">
                   <Clock className="w-4 h-4 text-[var(--spa-blush-300)] shrink-0" />
@@ -361,11 +399,11 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                 )}
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-wrap gap-2 pt-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 border-[var(--spa-border)]"
+                  className="flex-1 min-w-[120px] border-[var(--spa-border)]"
                   onClick={() => { setIsDetailOpen(false); setIsFormOpen(true); }}
                 >
                   <Pencil className="w-4 h-4 mr-2" />
@@ -375,12 +413,47 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                 {canCreateInvoice && (
                   <Button
                     size="sm"
-                    className="flex-1 bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
+                    className="flex-1 min-w-[120px] bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
                     onClick={() => { setIsDetailOpen(false); setIsInvoiceDialogOpen(true); }}
                   >
                     <FilePlus className="w-4 h-4 mr-2" />
                     Tạo hóa đơn
                   </Button>
+                )}
+                
+                {!['COMPLETED', 'CANCELLED'].includes(detailApp.status) && (
+                  <div className="flex-1 min-w-[120px]">
+                    {!!detailApp.invoiceId ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger render={<div />}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={true}
+                              className="w-full border-[var(--spa-danger)] text-[var(--spa-danger)] pointer-events-none"
+                            >
+                              <XCircle className="w-4 h-4 mr-2" />
+                              Hủy lịch
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-red-500 text-white border-none">
+                            <p>Lịch hẹn này đã sinh Hóa đơn. Vui lòng xử lý Hóa đơn trước.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full border-[var(--spa-danger)] text-[var(--spa-danger)] hover:bg-red-50 hover:text-[var(--spa-danger)]"
+                        onClick={() => { setIsDetailOpen(false); setIsCancelModalOpen(true); }}
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        Hủy lịch
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -395,6 +468,13 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
           appointment={selectedAppointment}
         />
       )}
+
+      {/* Cancel Appointment Modal */}
+      <CancelAppointmentModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        appointment={selectedAppointment}
+      />
     </div>
   );
 }

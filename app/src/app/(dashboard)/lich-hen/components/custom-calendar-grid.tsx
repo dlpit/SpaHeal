@@ -148,14 +148,18 @@ export function CustomCalendarGrid({
                                 key={app.id}
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); onAppointmentClick(app); }}
-                                className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-left
-                                  transition-all hover:opacity-90 hover:shadow-md focus:outline-none"
+                                className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-left
+                                  transition-all hover:opacity-90 hover:shadow-md focus:outline-none ${
+                                    app.status === 'CANCELLED' ? 'opacity-50 line-through' : ''
+                                  }`}
                                 style={{ backgroundColor: style.bg, color: style.text }}
                               >
                                 <span className="shrink-0 font-bold opacity-90">{app.startTime}</span>
                                 <span className="truncate">
                                   {app.customerName}
-                                  {app.serviceName ? ` · ${app.serviceName}` : ''}
+                                  {app.services && app.services.length > 0 
+                                    ? ` · ${app.services.map(s => s.serviceName).join(', ')}` 
+                                    : app.serviceName ? ` · ${app.serviceName}` : ''}
                                 </span>
                               </button>
                             );

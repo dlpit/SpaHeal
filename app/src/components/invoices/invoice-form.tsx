@@ -35,10 +35,14 @@ interface InvoiceFormProps {
   options: FormOptions;
   /** Giá trị pre-fill từ lịch hẹn — dùng khi tạo hóa đơn từ InvoiceFromAppointmentDialog */
   prefillValues?: Partial<InvoiceFormValues>;
-  /** Nếu true (mặc định), redirect sang /doanh-thu sau khi tạo thành công */
+  /** Lựa chọn có chuyển hướng sau khi thành công không */
   onSuccessRedirect?: boolean;
   /** Callback tùy chọn sau khi tạo hóa đơn thành công */
   onSuccess?: () => void;
+  /** Trạng thái hiển thị trong Dialog (tránh lỗi sticky footer) */
+  isDialog?: boolean;
+  /** Callback khi nhấn Hủy */
+  onCancel?: () => void;
 }
 
 export function InvoiceForm({
@@ -46,6 +50,8 @@ export function InvoiceForm({
   prefillValues,
   onSuccessRedirect = true,
   onSuccess,
+  isDialog = false,
+  onCancel,
 }: InvoiceFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,7 +86,7 @@ export function InvoiceForm({
         }
       });
     }
-  }, [options.services]);
+  }, [options.services, prefillValues, form]);
 
   const { fields, append, remove } = useFieldArray({
     name: "items",
@@ -125,7 +131,7 @@ export function InvoiceForm({
   }
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pb-24">
+    <form onSubmit={form.handleSubmit(onSubmit)} className={cn("space-y-6", !isDialog && "pb-24")}>
       {error && (
         <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm font-medium border border-red-200">
           {error}
@@ -205,7 +211,10 @@ export function InvoiceForm({
               {/* Staff */}
               <div className="space-y-2">
                 <Label>Nhân viên thực hiện</Label>
-                <Select onValueChange={(val) => form.setValue("staffId", val || undefined)} value={form.watch("staffId") || ""}>
+                <Select 
+                  onValueChange={(val) => form.setValue("staffId", val === "none" ? undefined : (val || undefined))} 
+                  value={form.watch("staffId") || "none"}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Chọn nhân viên">
                       {(val: string | null) => {
@@ -447,12 +456,19 @@ export function InvoiceForm({
       </div>
 
       {/* Floating Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-lg border-t z-50 md:left-64 flex justify-end px-6 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]">
+      <div 
+        className={cn(
+          "p-4 bg-background/95 backdrop-blur-xl border-t z-50 flex justify-end px-6 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]",
+          isDialog 
+            ? "sticky bottom-[-16px] -mx-4 -mb-4 mt-6 rounded-b-xl" // Inside dialog: match p-4 padding of DialogContent
+            : "fixed bottom-0 left-0 right-0 md:left-64" // Full page
+        )}
+      >
         <div className="flex gap-4 w-full max-w-7xl mx-auto justify-end">
           <Button 
             type="button" 
             variant="outline" 
-            onClick={() => router.back()}
+            onClick={() => onCancel ? onCancel() : router.back()}
             disabled={isSubmitting}
             className="w-32"
           >

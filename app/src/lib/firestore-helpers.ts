@@ -74,6 +74,47 @@ export async function generateInvoiceCode(date: Date): Promise<string> {
 }
 
 /**
+ * Tương tự getNextSequence nhưng nhận transaction từ bên ngoài để đảm bảo tính ACID
+ */
+export async function getNextSequenceInTx(
+  transaction: FirebaseFirestore.Transaction,
+  counterName: string
+): Promise<number> {
+  const counterRef = db.collection(COLLECTIONS.COUNTERS).doc(counterName);
+  const counterDoc = await transaction.get(counterRef);
+  
+  let nextVal: number;
+  if (!counterDoc.exists) {
+    nextVal = 1;
+    transaction.set(counterRef, { current: 1 } satisfies CounterDoc);
+  } else {
+    const data = counterDoc.data() as CounterDoc;
+    nextVal = data.current + 1;
+    transaction.update(counterRef, { current: nextVal });
+  }
+  
+  return nextVal;
+}
+
+/**
+ * Tương tự generateInvoiceCode nhưng nhận transaction từ bên ngoài
+ */
+export async function generateInvoiceCodeInTx(
+  transaction: FirebaseFirestore.Transaction,
+  date: Date
+): Promise<string> {
+  const yy = date.getFullYear().toString().slice(-2);
+  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+  const dd = date.getDate().toString().padStart(2, '0');
+  const dateStr = `${yy}${mm}${dd}`;
+  
+  const counterName = `invoice_${dateStr}`;
+  const sequence = await getNextSequenceInTx(transaction, counterName);
+  
+  return `HD${dateStr}-${sequence.toString().padStart(3, '0')}`;
+}
+
+/**
  * Serialize a Firestore document snapshot to a plain object
  * Converts Timestamps to ISO date strings for client compatibility
  */

@@ -69,24 +69,47 @@ export function InvoiceFromAppointmentDialog({
     staffId: appointment.staffId || undefined,
     date: new Date(appointment.date),
     notes: appointment.notes || '',
-    // Nếu lịch hẹn có dịch vụ → pre-fill item đầu tiên
-    ...(appointment.serviceId
+    ...(appointment.services && appointment.services.length > 0
+      ? {
+          items: appointment.services.map((s) => ({
+            serviceId: s.serviceId,
+            quantity: s.quantity || 1,
+            unitPrice: s.price || 0,
+          })),
+        }
+      : appointment.serviceId
       ? {
           items: [
             {
               serviceId: appointment.serviceId,
               quantity: 1,
-              unitPrice: 0, // Sẽ được auto-fill khi InvoiceForm mount và tìm thấy dịch vụ trong options
+              unitPrice: 0,
             },
           ],
         }
       : {}),
   };
 
+  // Prepare service display text to avoid long wrapping lines
+  let servicesDisplay = null;
+  let fullServicesText = '';
+  if (appointment.services && appointment.services.length > 0) {
+    fullServicesText = appointment.services.map((s) => s.serviceName).join(', ');
+    if (appointment.services.length <= 2) {
+      servicesDisplay = fullServicesText;
+    } else {
+      const firstTwo = appointment.services.slice(0, 2).map((s) => s.serviceName).join(', ');
+      servicesDisplay = `${firstTwo} và ${appointment.services.length - 2} dịch vụ khác`;
+    }
+  } else if (appointment.serviceName) {
+    fullServicesText = appointment.serviceName;
+    servicesDisplay = appointment.serviceName;
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[90vw] lg:max-w-[1100px] max-h-[95vh] overflow-y-auto bg-background">
-        <DialogHeader className="bg-muted/30 px-6 py-4 border-b -mx-6 -mt-6 mb-2 rounded-t-lg">
+        <DialogHeader className="bg-background px-6 py-4 border-b -mx-4 -mt-4 mb-2 rounded-t-xl sticky top-[-16px] z-50">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[var(--spa-blush-100)] rounded-lg">
               <FilePlus className="w-5 h-5 text-[var(--spa-blush-400)]" />
@@ -95,10 +118,13 @@ export function InvoiceFromAppointmentDialog({
               <DialogTitle className="text-lg font-semibold">
                 Tạo hóa đơn từ lịch hẹn
               </DialogTitle>
-              <DialogDescription className="text-sm text-muted-foreground">
+              <DialogDescription 
+                className="text-sm text-muted-foreground line-clamp-1"
+                title={fullServicesText ? `Khách hàng: ${appointment.customerName} · Dịch vụ: ${fullServicesText}` : undefined}
+              >
                 Khách hàng: <strong>{appointment.customerName}</strong>
-                {appointment.serviceName && (
-                  <> · Dịch vụ: <strong>{appointment.serviceName}</strong></>
+                {servicesDisplay && (
+                  <> · Dịch vụ: <strong>{servicesDisplay}</strong></>
                 )}
               </DialogDescription>
             </div>
@@ -124,6 +150,8 @@ export function InvoiceFromAppointmentDialog({
             options={options}
             prefillValues={prefillValues}
             onSuccessRedirect={false}
+            isDialog={true}
+            onCancel={onClose}
             onSuccess={() => {
               onClose();
               router.refresh();

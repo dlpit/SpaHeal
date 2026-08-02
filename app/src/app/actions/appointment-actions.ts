@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/firebase';
 import { COLLECTIONS, AppointmentDoc, AppointmentStatus, StaffDoc, ServiceDoc } from '@/lib/firestore-types';
-import { serializeDoc, serverTimestamp, toTimestamp } from '@/lib/firestore-helpers';
+import { serializeDoc, serverTimestamp, toTimestamp, generateInvoiceCodeInTx } from '@/lib/firestore-helpers';
 import { AppointmentFormValues } from '@/lib/schemas/appointment';
 import { revalidatePath } from 'next/cache';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -57,6 +57,7 @@ export async function createAppointment(data: AppointmentFormValues) {
       serviceName: data.serviceName || null,
       staffId: data.staffId || null,
       staffName: data.staffName || null,
+      services: data.services || [],
       date: toTimestamp(data.date),
       startTime: data.startTime,
       endTime: data.endTime || null,
@@ -86,6 +87,7 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
       serviceName: data.serviceName || null,
       staffId: data.staffId || null,
       staffName: data.staffName || null,
+      services: data.services || [],
       date: toTimestamp(data.date),
       startTime: data.startTime,
       endTime: data.endTime || null,
@@ -141,6 +143,92 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
   }
 }
 
+export async function cancelAppointment(
+  id: string,
+  data: { cancelReason: string; depositResolution?: 'REFUNDED' | 'CONFISCATED' }
+) {
+  try {
+    const docRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(id);
+    
+    await db.runTransaction(async (transaction) => {
+      const docSnap = await transaction.get(docRef);
+      
+      if (!docSnap.exists) {
+        throw new Error('Lịch hẹn không tồn tại');
+      }
+      
+      const appointmentData = docSnap.data() as AppointmentDoc;
+
+      if (appointmentData.invoiceId) {
+        throw new Error('Không thể hủy vì lịch hẹn đã sinh Hóa đơn.');
+      }
+
+      if (appointmentData.deposit && appointmentData.deposit > 0 && !data.depositResolution) {
+        throw new Error('Vui lòng chọn hướng xử lý tiền cọc.');
+      }
+
+      const updateData: Partial<AppointmentDoc> = {
+        status: 'CANCELLED',
+        cancelReason: data.cancelReason,
+        updatedAt: serverTimestamp() as any,
+      };
+
+      if (data.depositResolution) {
+        updateData.depositResolution = data.depositResolution;
+      }
+
+      // Generate penalty invoice if CONFISCATED
+      if (data.depositResolution === 'CONFISCATED' && appointmentData.deposit && appointmentData.deposit > 0) {
+        const dateNow = new Date();
+        const invoiceCode = await generateInvoiceCodeInTx(transaction, dateNow);
+        
+        const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc();
+        
+        const newInvoice = {
+          invoiceCode,
+          appointmentId: id,
+          date: toTimestamp(dateNow),
+          customerId: appointmentData.customerId,
+          customerName: appointmentData.customerName,
+          staffId: appointmentData.staffId || null,
+          staffName: appointmentData.staffName || null,
+          paymentMethodId: null,
+          paymentMethodName: null,
+          paymentAccountId: null,
+          paymentAccountName: null,
+          subTotal: appointmentData.deposit,
+          discount: 0,
+          surcharge: 0,
+          totalAmount: appointmentData.deposit,
+          status: 'COMPLETED',
+          notes: 'Phí phạt hủy lịch từ tiền cọc',
+          items: [{
+            serviceId: 'penalty',
+            serviceName: 'Phí phạt hủy lịch',
+            serviceCode: 'PENALTY',
+            quantity: 1,
+            unitPrice: appointmentData.deposit,
+            amount: appointmentData.deposit,
+          }],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        
+        transaction.set(invoiceRef, newInvoice);
+        updateData.invoiceId = invoiceRef.id;
+      }
+
+      transaction.update(docRef, updateData);
+    });
+    
+    revalidatePath('/lich-hen');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error canceling appointment:', error);
+    return { success: false, error: error.message || 'Không thể hủy lịch hẹn' };
+  }
+}
+
 export async function deleteAppointment(id: string) {
   try {
     await db.collection(COLLECTIONS.APPOINTMENTS).doc(id).delete();
@@ -172,9 +260,10 @@ export async function getAppointmentPrefill(appointmentId: string) {
         customerId: data.customerId,
         customerName: data.customerName,
         staffId: data.staffId || null,
-        // Pre-fill item đầu tiên nếu có dịch vụ
+        // Pre-fill item đầu tiên nếu có dịch vụ (legacy)
         serviceId: data.serviceId || null,
         serviceName: data.serviceName || null,
+        services: data.services || [],
         notes: data.notes || null,
         date: data.date?.toDate(),
       },

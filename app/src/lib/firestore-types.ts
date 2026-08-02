@@ -117,14 +117,25 @@ export type ClientCustomerDoc = Omit<CustomerDoc, 'createdAt' | 'updatedAt' | 'b
   lastVisit: string | null;
 };
 
+export interface AppointmentServiceEmbed {
+  serviceId: string;
+  serviceName: string;
+  quantity: number;
+  price: number;
+}
+
 export interface AppointmentDoc {
   customerId: string;
   customerName: string; // Denormalized
   /**
-   * Dịch vụ được đặt — nullable để tương thích dữ liệu cũ và lịch hẹn chưa chọn dịch vụ
+   * Dịch vụ được đặt (Legacy) — nullable để tương thích dữ liệu cũ
    */
-  serviceId: string | null;
-  serviceName: string | null; // Denormalized
+  serviceId?: string | null;
+  serviceName?: string | null; // Denormalized
+  /**
+   * Danh sách dịch vụ được đặt (Multi-service)
+   */
+  services?: AppointmentServiceEmbed[];
   /**
    * Kỹ thuật viên được chỉ định — nullable vì có thể chỉ định sau
    */
@@ -136,6 +147,9 @@ export interface AppointmentDoc {
   status: AppointmentStatus;
   notes: string | null;
   deposit: number | null;
+  cancelReason?: string | null;
+  depositResolution?: 'REFUNDED' | 'CONFISCATED' | null;
+  invoiceId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
