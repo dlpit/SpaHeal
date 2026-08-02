@@ -23,3 +23,10 @@ export const invoiceFormSchema = z.object({
 });
 
 export type InvoiceFormValues = z.infer<typeof invoiceFormSchema>;
+
+export const refundInvoiceSchema = z.object({
+  invoiceId: z.string().min(1, "Thiếu ID hóa đơn"),
+  cancelReason: z.string().min(5, "Lý do hủy/hoàn tiền phải dài ít nhất 5 ký tự"),
+});
+
+export type RefundInvoiceValues = z.infer<typeof refundInvoiceSchema>;

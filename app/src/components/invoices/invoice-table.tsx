@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { InvoiceDetailDialog } from './invoice-detail-dialog';
+import { RefundInvoiceModal } from './refund-invoice-modal';
 import { cn } from '@/lib/utils';
 import type { ClientInvoiceDoc } from '@/lib/firestore-types';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
@@ -35,6 +36,7 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedInvoice, setSelectedInvoice] = useState<ClientInvoiceDoc | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [refundTarget, setRefundTarget] = useState<ClientInvoiceDoc | null>(null);
   const pageSize = 10;
 
   const filteredInvoices = useMemo(() => {
@@ -57,6 +59,13 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
   const openDetail = (invoice: ClientInvoiceDoc) => {
     setSelectedInvoice(invoice);
     setDialogOpen(true);
+  };
+
+  const handleRefundClick = (invoice: ClientInvoiceDoc) => {
+    setDialogOpen(false); // Đóng Detail Modal trước
+    setTimeout(() => {
+      setRefundTarget(invoice); // Mở Refund Modal sau một độ trễ nhỏ để tránh đè backdrop
+    }, 150);
   };
 
   return (
@@ -189,6 +198,18 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         invoice={selectedInvoice}
+        onRefundClick={handleRefundClick}
+      />
+
+      {/* Refund Modal độc lập */}
+      <RefundInvoiceModal
+        open={!!refundTarget}
+        onOpenChange={(open) => {
+          if (!open) setRefundTarget(null);
+        }}
+        invoiceId={refundTarget?.id || ''}
+        invoiceCode={refundTarget?.invoiceCode || ''}
+        onSuccess={() => setRefundTarget(null)}
       />
     </div>
   );

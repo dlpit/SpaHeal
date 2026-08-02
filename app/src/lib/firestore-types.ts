@@ -186,15 +186,19 @@ export interface InvoiceDoc {
   status: InvoiceStatus;
   notes: string | null;
   items: InvoiceItemEmbed[];
+  cancelReason?: string | null;
+  refundedAt?: Timestamp | null;
+  cancelledBy?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 
-export type ClientInvoiceDoc = Omit<InvoiceDoc, 'date' | 'createdAt' | 'updatedAt'> & {
+export type ClientInvoiceDoc = Omit<InvoiceDoc, 'date' | 'createdAt' | 'updatedAt' | 'refundedAt'> & {
   id: string;
   date: string;
   createdAt: string;
   updatedAt: string;
+  refundedAt?: string | null;
 };
 
 export interface ExpenseCategoryDoc {

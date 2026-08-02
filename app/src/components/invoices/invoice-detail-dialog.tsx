@@ -6,18 +6,22 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { formatCurrency, formatDate } from '@/lib/format';
-import { Receipt, User, CalendarDays, CreditCard, Tag, FileText } from 'lucide-react';
+import { Receipt, User, CalendarDays, CreditCard, Tag, FileText, AlertCircle } from 'lucide-react';
 import type { ClientInvoiceDoc } from '@/lib/firestore-types';
 import { cn } from '@/lib/utils';
+import { canVoidInvoice } from '@/lib/permissions';
 
 interface InvoiceDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   invoice: ClientInvoiceDoc | null;
+  onRefundClick?: (invoice: ClientInvoiceDoc) => void;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -27,7 +31,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   REFUNDED: { label: 'Hoàn tiền', className: 'bg-blue-100 text-blue-700 border-blue-300/30 dark:bg-blue-900/20 dark:text-blue-300' },
 };
 
-export function InvoiceDetailDialog({ open, onOpenChange, invoice }: InvoiceDetailDialogProps) {
+export function InvoiceDetailDialog({ open, onOpenChange, invoice, onRefundClick }: InvoiceDetailDialogProps) {
   if (!invoice) return null;
 
   const statusConfig = STATUS_CONFIG[invoice.status] ?? { label: invoice.status, className: '' };
@@ -81,6 +85,20 @@ export function InvoiceDetailDialog({ open, onOpenChange, invoice }: InvoiceDeta
               </div>
             )}
           </div>
+
+          {invoice.status === 'REFUNDED' && invoice.cancelReason && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex gap-3 text-red-800">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5 text-red-600" />
+              <div>
+                <p className="text-sm font-semibold text-red-900">Thông tin hoàn tiền / hủy bỏ</p>
+                <div className="mt-1 text-sm space-y-1">
+                  <p><span className="font-medium text-red-700">Lý do:</span> {invoice.cancelReason}</p>
+                  {invoice.refundedAt && <p><span className="font-medium text-red-700">Thời gian:</span> {formatDate(invoice.refundedAt)}</p>}
+                  {invoice.cancelledBy && <p><span className="font-medium text-red-700">Thực hiện bởi:</span> {invoice.cancelledBy}</p>}
+                </div>
+              </div>
+            </div>
+          )}
 
           <Separator className="border-dashed" />
 
@@ -148,6 +166,21 @@ export function InvoiceDetailDialog({ open, onOpenChange, invoice }: InvoiceDeta
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Footer Thao tác */}
+        <div className="bg-muted/30 px-6 py-4 border-t flex justify-end gap-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Đóng
+          </Button>
+          {invoice.status === 'COMPLETED' && canVoidInvoice() && onRefundClick && (
+            <Button
+              variant="destructive"
+              onClick={() => onRefundClick(invoice)}
+            >
+              Hoàn tiền / Hủy bỏ
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

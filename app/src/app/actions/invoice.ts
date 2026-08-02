@@ -5,7 +5,7 @@ import { db } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-types";
 import type { ServiceDoc, StaffDoc, PaymentMethodDoc, PaymentAccountDoc, CustomerDoc, InvoiceDoc, InvoiceItemEmbed } from "@/lib/firestore-types";
 import { calculateLoyaltyTier, calculateRewardPoints } from "@/lib/firestore-types";
-import { invoiceFormSchema, InvoiceFormValues } from "@/lib/schemas/invoice";
+import { invoiceFormSchema, InvoiceFormValues, refundInvoiceSchema, RefundInvoiceValues } from "@/lib/schemas/invoice";
 import { generateInvoiceCode, serverTimestamp, toTimestamp, serializeDoc } from "@/lib/firestore-helpers";
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
@@ -257,5 +257,92 @@ export async function createInvoice(data: InvoiceFormValues) {
       return { success: false, error: "Dữ liệu không hợp lệ" };
     }
     return { success: false, error: "Đã xảy ra lỗi khi tạo hóa đơn." };
+  }
+}
+
+export async function refundInvoice(data: RefundInvoiceValues & { cancelledBy?: string }) {
+  try {
+    const validData = refundInvoiceSchema.parse(data);
+
+    await db.runTransaction(async (transaction) => {
+      const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc(validData.invoiceId);
+      const invoiceSnap = await transaction.get(invoiceRef);
+
+      if (!invoiceSnap.exists) {
+        throw new Error("Hóa đơn không tồn tại.");
+      }
+
+      const invoiceData = invoiceSnap.data() as InvoiceDoc;
+
+      if (invoiceData.status !== "COMPLETED") {
+        throw new Error("Chỉ có thể hoàn tiền hóa đơn đã hoàn thành.");
+      }
+
+      // Thực hiện tất cả các thao tác READ trước (Quy định của Firestore)
+      let customerSnap = null;
+      let customerRef = null;
+      
+      if (invoiceData.customerId) {
+        customerRef = db.collection(COLLECTIONS.CUSTOMERS).doc(invoiceData.customerId);
+        customerSnap = await transaction.get(customerRef);
+      }
+
+      // 1. Cập nhật hóa đơn (Bắt đầu các thao tác WRITE)
+      transaction.update(invoiceRef, {
+        status: "REFUNDED",
+        cancelReason: validData.cancelReason,
+        refundedAt: serverTimestamp(),
+        cancelledBy: data.cancelledBy || null,
+        updatedAt: serverTimestamp(),
+      });
+
+      // 2. Cập nhật điểm & doanh số khách hàng
+      if (customerRef && customerSnap && customerSnap.exists) {
+        const customerData = customerSnap.data() as CustomerDoc;
+        
+        const newTotalSpent = Math.max(0, (customerData.totalSpent || 0) - invoiceData.totalAmount);
+        const pointsToDeduct = calculateRewardPoints(invoiceData.totalAmount);
+        const newRewardPoints = Math.max(0, (customerData.rewardPoints || 0) - pointsToDeduct);
+        const newLoyaltyTier = calculateLoyaltyTier(newTotalSpent);
+        
+        transaction.update(customerRef, {
+          totalSpent: newTotalSpent,
+          rewardPoints: newRewardPoints,
+          loyaltyTier: newLoyaltyTier,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      // 3. Tạo phiếu chi (Expense) để đối soát dòng tiền
+      const expenseRef = db.collection(COLLECTIONS.EXPENSES).doc();
+      // Chúng ta sử dụng ID 'REFUND' tạm thời cho category nếu không có bảng mã tĩnh, 
+      // hoặc bạn có thể query lấy ID của category 'Hoàn tiền' (trong phạm vi này ta lưu thẳng giá trị denormalized)
+      transaction.set(expenseRef, {
+        date: serverTimestamp(),
+        expenseCategoryId: "REFUND_CATEGORY", // Dummy ID hoặc ID thật của danh mục hoàn tiền
+        categoryName: "Hoàn tiền dịch vụ",
+        categoryGroup: "Hoàn tiền hóa đơn",
+        amount: invoiceData.totalAmount,
+        quantity: 1,
+        description: `Hoàn tiền cho hóa đơn ${invoiceData.invoiceCode}. Lý do: ${validData.cancelReason}`,
+        notes: `Thực hiện bởi: ${data.cancelledBy || 'System'}`,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    revalidatePath('/doanh-thu');
+    revalidatePath('/lich-hen');
+    revalidatePath('/khach-hang');
+    revalidatePath('/chi-phi');
+    revalidatePath('/');
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error refunding invoice:", error);
+    if (error instanceof z.ZodError) {
+      return { success: false, error: "Dữ liệu không hợp lệ" };
+    }
+    return { success: false, error: error.message || "Đã xảy ra lỗi khi hoàn tiền hóa đơn." };
   }
 }
