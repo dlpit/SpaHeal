@@ -60,9 +60,12 @@ export function AppointmentFormModal({
   const [error, setError] = useState<string | null>(null);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const isCalendarOpenState = useState(false);
+  const isCalendarOpen = isCalendarOpenState[0];
+  const setIsCalendarOpen = isCalendarOpenState[1];
 
   const isEditing = !!appointment;
+  const isReadOnly = isEditing && (appointment?.status === 'COMPLETED' || appointment?.status === 'CANCELLED' || !!appointment?.invoiceId);
 
   const formatDateForInput = (d: Date | string) => {
     const dateObj = new Date(d);
@@ -230,6 +233,16 @@ export function AppointmentFormModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
+          {isReadOnly && (
+            <div className="p-3 text-sm text-amber-800 bg-amber-50 rounded-md border border-amber-200 mb-2 flex items-start">
+              <div className="mr-2 mt-0.5 shrink-0">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <span>Lịch hẹn đã kết thúc / sinh hóa đơn. Dữ liệu bị khóa để bảo đảm toàn vẹn hệ thống (chỉ có thể cập nhật Ghi chú).</span>
+            </div>
+          )}
           {error && (
             <div className="p-3 text-sm text-[var(--spa-danger)] bg-red-50 rounded-md border border-[var(--spa-danger)]/20">
               {error}
@@ -243,6 +256,7 @@ export function AppointmentFormModal({
               value={watch('customerId')}
               initialCustomers={customers}
               error={!!errors.customerId}
+              disabled={isReadOnly}
               onValueChange={(val) => onCustomerChange(val)}
               onCustomerSelected={(c) => setValue('customerName', c.fullName, { shouldValidate: true })}
               onAddNew={() => setIsCustomerModalOpen(true)}
@@ -255,6 +269,7 @@ export function AppointmentFormModal({
             <Select
               value={selectedStaffId || '__none__'}
               onValueChange={(val: string | null) => onStaffChange(val || '__none__')}
+              disabled={isReadOnly}
             >
               <SelectTrigger>
                 <span data-slot="select-value" className={`flex flex-1 text-left truncate ${!selectedStaffId ? 'text-muted-foreground' : ''}`}>
@@ -279,7 +294,7 @@ export function AppointmentFormModal({
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <Label className="text-[var(--spa-text-primary)]">Dịch vụ</Label>
-              <Button type="button" variant="outline" size="sm" onClick={() => appendService({ serviceId: '', serviceName: '', quantity: 1, price: 0 })}>
+              <Button type="button" variant="outline" size="sm" onClick={() => appendService({ serviceId: '', serviceName: '', quantity: 1, price: 0 })} disabled={isReadOnly}>
                 <Plus className="size-4 mr-2" /> Thêm dịch vụ
               </Button>
             </div>
@@ -294,6 +309,7 @@ export function AppointmentFormModal({
                         ? [{ id: watch(`services.${index}.serviceId`)!, name: watch(`services.${index}.serviceName`)!, code: '', price: watch(`services.${index}.price`)! }]
                         : []
                     }
+                    disabled={isReadOnly}
                     onValueChange={(val) => {
                       if (val === '__none__') {
                         setValue(`services.${index}.serviceId`, '');
@@ -316,7 +332,8 @@ export function AppointmentFormModal({
                     type="number" 
                     min={1} 
                     {...register(`services.${index}.quantity`, { valueAsNumber: true })} 
-                    className={errors.services?.[index]?.quantity ? 'border-[var(--spa-danger)]' : ''}
+                    className={cn(errors.services?.[index]?.quantity ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
+                    readOnly={isReadOnly}
                   />
                 </div>
                 
@@ -326,7 +343,7 @@ export function AppointmentFormModal({
                   </span>
                 </div>
                 
-                <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => removeService(index)}>
+                <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => removeService(index)} disabled={isReadOnly}>
                   <Trash2 className="size-4" />
                 </Button>
               </div>
@@ -348,6 +365,7 @@ export function AppointmentFormModal({
                   render={
                     <Button
                       variant="outline"
+                      disabled={isReadOnly}
                       className={cn(
                         "w-full justify-start text-left font-normal border-[var(--spa-border)]",
                         !watch('date') && "text-muted-foreground",
@@ -382,7 +400,8 @@ export function AppointmentFormModal({
               <Input
                 type="time"
                 {...register('startTime')}
-                className={errors.startTime ? 'border-[var(--spa-danger)]' : ''}
+                className={cn(errors.startTime ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
+                readOnly={isReadOnly}
               />
               {errors.startTime && <p className="text-xs text-[var(--spa-danger)]">{errors.startTime.message}</p>}
             </div>
@@ -394,6 +413,8 @@ export function AppointmentFormModal({
               <Input
                 type="time"
                 {...register('endTime')}
+                className={isReadOnly ? 'opacity-50 pointer-events-none' : ''}
+                readOnly={isReadOnly}
               />
             </div>
 
@@ -402,6 +423,7 @@ export function AppointmentFormModal({
               <Select
                 value={selectedStatus}
                 onValueChange={(val: any) => setValue('status', val, { shouldValidate: true })}
+                disabled={isReadOnly || (isEditing && ['COMPLETED', 'CANCELLED'].includes(appointment?.status || ''))}
               >
                 <SelectTrigger>
                   <span data-slot="select-value" className="flex flex-1 text-left truncate">
@@ -421,8 +443,8 @@ export function AppointmentFormModal({
                   <SelectItem value="CONFIRMED">Đã xác nhận</SelectItem>
                   <SelectItem value="ARRIVED">Đã đến</SelectItem>
                   <SelectItem value="IN_PROGRESS">Đang làm</SelectItem>
-                  <SelectItem value="COMPLETED">Hoàn thành</SelectItem>
-                  <SelectItem value="CANCELLED">Đã hủy</SelectItem>
+                  <SelectItem value="COMPLETED" disabled={isEditing && appointment?.status !== 'COMPLETED'}>Hoàn thành</SelectItem>
+                  <SelectItem value="CANCELLED" disabled={isEditing && appointment?.status !== 'CANCELLED'}>Đã hủy</SelectItem>
                   <SelectItem value="RESCHEDULED">Dời lịch</SelectItem>
                   <SelectItem value="NO_SHOW">Không đến</SelectItem>
                   <SelectItem value="DEPOSIT">Đã đặt cọc</SelectItem>
@@ -437,7 +459,8 @@ export function AppointmentFormModal({
               type="number"
               placeholder="0"
               {...register('deposit', { valueAsNumber: true })}
-              className={errors.deposit ? 'border-[var(--spa-danger)]' : ''}
+              className={cn(errors.deposit ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
+              readOnly={isReadOnly}
             />
           </div>
 
@@ -463,7 +486,7 @@ export function AppointmentFormModal({
               disabled={isPending}
               className="bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
             >
-              {isPending ? 'Đang lưu...' : isEditing ? 'Cập nhật' : 'Thêm mới'}
+              {isPending ? 'Đang lưu...' : isReadOnly ? 'Cập nhật Ghi chú' : isEditing ? 'Cập nhật' : 'Thêm mới'}
             </Button>
           </DialogFooter>
         </form>

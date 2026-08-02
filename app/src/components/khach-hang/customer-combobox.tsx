@@ -27,6 +27,7 @@ interface CustomerComboboxProps {
   onAddNew?: () => void;
   initialCustomers?: ClientCustomerDoc[];
   error?: boolean;
+  disabled?: boolean;
 }
 
 export function CustomerCombobox({
@@ -36,6 +37,7 @@ export function CustomerCombobox({
   onAddNew,
   initialCustomers = [],
   error,
+  disabled,
 }: CustomerComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -79,10 +81,12 @@ export function CustomerCombobox({
       if (!isOpen) setQuery(''); // Xóa kết quả search khi đóng để lần sau mở lại thấy list đầy đủ
     }}>
       <PopoverTrigger
+        disabled={disabled}
         className={cn(
           "flex w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 h-8",
           error && "border-destructive ring-3 ring-destructive/20",
-          !selectedCustomer && "text-muted-foreground"
+          !selectedCustomer && "text-muted-foreground",
+          disabled && "opacity-50 cursor-not-allowed"
         )}
       >
         <span className="truncate">

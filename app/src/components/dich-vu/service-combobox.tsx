@@ -26,6 +26,7 @@ interface ServiceComboboxProps {
   onServiceSelected?: (service: ServiceOption) => void;
   initialServices?: ServiceOption[];
   error?: boolean;
+  disabled?: boolean;
 }
 
 export function ServiceCombobox({
@@ -34,6 +35,7 @@ export function ServiceCombobox({
   onServiceSelected,
   initialServices = [],
   error,
+  disabled,
 }: ServiceComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -81,10 +83,12 @@ export function ServiceCombobox({
       if (!isOpen) setQuery(''); // Xóa kết quả search khi đóng
     }}>
       <PopoverTrigger
+        disabled={disabled}
         className={cn(
           "flex w-full overflow-hidden items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 h-8",
           error && "border-destructive ring-3 ring-destructive/20",
-          !selectedService && "text-muted-foreground"
+          !selectedService && "text-muted-foreground",
+          disabled && "opacity-50 cursor-not-allowed"
         )}
       >
         <span className="flex-1 text-left truncate">

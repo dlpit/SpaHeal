@@ -104,9 +104,7 @@ export function InvoiceForm({
   const paymentMethodMap = useMemo(() => new Map(options.paymentMethods.map(m => [m.id, m])), [options.paymentMethods]);
   const paymentAccountMap = useMemo(() => new Map(options.paymentAccounts.map(a => [a.id, a])), [options.paymentAccounts]);
 
-  const subTotal = useMemo(() => 
-    items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.unitPrice || 0)), 0),
-  [items]);
+  const subTotal = items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.unitPrice || 0)), 0);
   const totalAmount = Math.max(0, subTotal - discount + surcharge);
 
   async function onSubmit(data: InvoiceFormValues) {

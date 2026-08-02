@@ -80,6 +80,35 @@ export async function createAppointment(data: AppointmentFormValues) {
 
 export async function updateAppointment(id: string, data: AppointmentFormValues) {
   try {
+    const docRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(id);
+    const docSnap = await docRef.get();
+    
+    if (!docSnap.exists) {
+      throw new Error('Lịch hẹn không tồn tại');
+    }
+    
+    const oldData = docSnap.data() as AppointmentDoc;
+    
+    const isLocked = oldData.status === 'COMPLETED' || oldData.status === 'CANCELLED' || !!oldData.invoiceId;
+
+    if (isLocked) {
+      // Chỉ cho phép cập nhật ghi chú khi đã khóa
+      await docRef.update({
+        notes: data.notes || null,
+        updatedAt: serverTimestamp() as any,
+      });
+      revalidatePath('/lich-hen');
+      return { success: true };
+    }
+
+    // Ngăn chặn đổi trạng thái sang COMPLETED/CANCELLED qua form edit thông thường
+    if (data.status === 'COMPLETED' && oldData.status !== 'COMPLETED') {
+      throw new Error('Vui lòng sử dụng nút "Hoàn thành" trong chi tiết lịch hẹn.');
+    }
+    if (data.status === 'CANCELLED' && oldData.status !== 'CANCELLED') {
+      throw new Error('Vui lòng sử dụng chức năng "Hủy lịch" chuyên dụng.');
+    }
+
     const updateData: Partial<AppointmentDoc> = {
       customerId: data.customerId,
       customerName: data.customerName,
@@ -97,7 +126,7 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
       updatedAt: serverTimestamp() as any,
     };
 
-    await db.collection(COLLECTIONS.APPOINTMENTS).doc(id).update(updateData);
+    await docRef.update(updateData);
     
     revalidatePath('/lich-hen');
     return { success: true };

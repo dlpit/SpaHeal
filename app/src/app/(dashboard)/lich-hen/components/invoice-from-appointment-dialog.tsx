@@ -20,7 +20,7 @@ import { InvoiceForm } from '@/components/invoices/invoice-form';
 
 interface InvoiceFromAppointmentDialogProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (isSuccess?: boolean) => void;
   appointment: ClientAppointmentDoc;
 }
 
@@ -107,7 +107,7 @@ export function InvoiceFromAppointmentDialog({
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(false); }}>
       <DialogContent className="sm:max-w-[90vw] lg:max-w-[1100px] max-h-[95vh] overflow-y-auto bg-background">
         <DialogHeader className="bg-background px-6 py-4 border-b -mx-4 -mt-4 mb-2 rounded-t-xl sticky top-[-16px] z-50">
           <div className="flex items-center gap-3">
@@ -151,9 +151,9 @@ export function InvoiceFromAppointmentDialog({
             prefillValues={prefillValues}
             onSuccessRedirect={false}
             isDialog={true}
-            onCancel={onClose}
+            onCancel={() => onClose(false)}
             onSuccess={() => {
-              onClose();
+              onClose(true);
               router.refresh();
             }}
           />

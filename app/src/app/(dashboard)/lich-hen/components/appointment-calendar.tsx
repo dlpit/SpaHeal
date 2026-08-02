@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { ClientAppointmentDoc } from '@/app/actions/appointment-actions';
+import { ClientAppointmentDoc, updateAppointmentStatus } from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc } from '@/lib/firestore-types';
 import { PageHeader } from '@/components/ui/page-header';
 import { CustomCalendarGrid } from './custom-calendar-grid';
@@ -24,7 +24,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { FilePlus, Pencil, User, Wrench, Clock, CalendarDays, Plus, ChevronLeft, ChevronRight, XCircle } from 'lucide-react';
+import { FilePlus, Pencil, User, Wrench, Clock, CalendarDays, Plus, ChevronLeft, ChevronRight, XCircle, CheckCircle, ArrowRight, Play, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -54,6 +55,8 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
   const [isMounted, setIsMounted] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [previousStatus, setPreviousStatus] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -71,6 +74,41 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
 
   const calendarRef = useRef<FullCalendar>(null);
+
+  const handleStatusUpdate = async (status: string, forceInvoice: boolean = false) => {
+    if (!selectedAppointment) return;
+    setIsUpdatingStatus(true);
+    
+    if (status === 'COMPLETED' || forceInvoice) {
+      setPreviousStatus(selectedAppointment.status);
+    }
+
+    try {
+      const res = await updateAppointmentStatus(selectedAppointment.id, status as any);
+      if (res.success) {
+        toast.success(`Đã cập nhật trạng thái thành: ${STATUS_LABELS[status].label}`);
+        
+        // Luôn cập nhật local state để view thay đổi liền mạch và logic revert hoạt động đúng
+        setSelectedAppointment({ ...selectedAppointment, status: status as any });
+
+        if (status === 'COMPLETED' || forceInvoice) {
+          setIsDetailOpen(false);
+          // Wait briefly to avoid dialog stacking issues
+          setTimeout(() => {
+            setIsInvoiceDialogOpen(true);
+          }, 200);
+        } else if (status === 'CONFIRMED' && (selectedAppointment.status === 'CANCELLED' || selectedAppointment.status === 'NO_SHOW')) {
+          setIsDetailOpen(false);
+        }
+      } else {
+        toast.error(res.error || 'Lỗi cập nhật trạng thái');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi hệ thống khi cập nhật trạng thái');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   // Sync date to FullCalendar when activeView changes to month/list
   useEffect(() => {
@@ -165,7 +203,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
         extendedProps: { ...app },
       };
     });
-  }, [initialAppointments]);
+  }, [filteredAppointments]);
 
   const handleFcDateClick = (arg: any) => {
     setSelectedDateStr(arg.dateStr);
@@ -399,62 +437,127 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 min-w-[120px] border-[var(--spa-border)]"
-                  onClick={() => { setIsDetailOpen(false); setIsFormOpen(true); }}
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Chỉnh sửa
-                </Button>
+              <div className="flex flex-col gap-3 pt-4 border-t border-[var(--spa-border)] mt-4">
+                {/* QUICK ACTIONS ROW */}
+                <div className="grid grid-cols-2 gap-2">
+                  {detailApp.status === 'CONFIRMED' && (
+                    <Button 
+                      size="sm" 
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white"
+                      onClick={() => handleStatusUpdate('ARRIVED')}
+                      disabled={isUpdatingStatus}
+                    >
+                      <ArrowRight className="w-4 h-4 mr-2" />
+                      Khách đã đến
+                    </Button>
+                  )}
+                  {detailApp.status === 'ARRIVED' && (
+                    <Button 
+                      size="sm" 
+                      className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                      onClick={() => handleStatusUpdate('IN_PROGRESS')}
+                      disabled={isUpdatingStatus}
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Bắt đầu làm
+                    </Button>
+                  )}
+                  {detailApp.status === 'IN_PROGRESS' && (
+                    <Button 
+                      size="sm" 
+                      className="w-full bg-green-500 hover:bg-green-600 text-white"
+                      onClick={() => handleStatusUpdate('COMPLETED')}
+                      disabled={isUpdatingStatus}
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Hoàn thành
+                    </Button>
+                  )}
+                  {['CANCELLED', 'NO_SHOW'].includes(detailApp.status) && (
+                    <Button 
+                      size="sm" 
+                      className="w-full bg-indigo-500 hover:bg-indigo-600 text-white"
+                      onClick={() => handleStatusUpdate('CONFIRMED')}
+                      disabled={isUpdatingStatus}
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Mở lại lịch (Re-open)
+                    </Button>
+                  )}
 
-                {canCreateInvoice && (
+                  {!['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(detailApp.status) && (
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="w-full bg-white border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                      onClick={() => handleStatusUpdate('COMPLETED', true)}
+                      disabled={isUpdatingStatus}
+                      title="Hoàn thành & Đi đến tạo Hóa đơn ngay"
+                    >
+                      <FilePlus className="w-4 h-4 mr-2" />
+                      Hoàn thành & Thu tiền
+                    </Button>
+                  )}
+                </div>
+
+                {/* SECONDARY ACTIONS ROW */}
+                <div className="flex flex-wrap gap-2">
                   <Button
+                    variant="outline"
                     size="sm"
-                    className="flex-1 min-w-[120px] bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
-                    onClick={() => { setIsDetailOpen(false); setIsInvoiceDialogOpen(true); }}
+                    className="flex-1 min-w-[100px] border-[var(--spa-border)]"
+                    onClick={() => { setIsDetailOpen(false); setIsFormOpen(true); }}
                   >
-                    <FilePlus className="w-4 h-4 mr-2" />
-                    Tạo hóa đơn
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Chỉnh sửa
                   </Button>
-                )}
-                
-                {!['COMPLETED', 'CANCELLED'].includes(detailApp.status) && (
-                  <div className="flex-1 min-w-[120px]">
-                    {!!detailApp.invoiceId ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger render={<div />}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={true}
-                              className="w-full border-[var(--spa-danger)] text-[var(--spa-danger)] pointer-events-none"
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Hủy lịch
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent className="bg-red-500 text-white border-none">
-                            <p>Lịch hẹn này đã sinh Hóa đơn. Vui lòng xử lý Hóa đơn trước.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full border-[var(--spa-danger)] text-[var(--spa-danger)] hover:bg-red-50 hover:text-[var(--spa-danger)]"
-                        onClick={() => { setIsDetailOpen(false); setIsCancelModalOpen(true); }}
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Hủy lịch
-                      </Button>
-                    )}
-                  </div>
-                )}
+
+                  {canCreateInvoice && detailApp.status === 'COMPLETED' && (
+                    <Button
+                      size="sm"
+                      className="flex-1 min-w-[120px] bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
+                      onClick={() => { setIsDetailOpen(false); setIsInvoiceDialogOpen(true); }}
+                    >
+                      <FilePlus className="w-4 h-4 mr-2" />
+                      Tạo hóa đơn
+                    </Button>
+                  )}
+                  
+                  {!['COMPLETED', 'CANCELLED'].includes(detailApp.status) && (
+                    <div className="flex-1 min-w-[100px]">
+                      {!!detailApp.invoiceId ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger render={<div className="w-full" />}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={true}
+                                className="w-full border-[var(--spa-danger)] text-[var(--spa-danger)] pointer-events-none"
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                Hủy lịch
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-red-500 text-white border-none">
+                              <p>Lịch hẹn này đã sinh Hóa đơn. Vui lòng xử lý Hóa đơn trước.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full border-[var(--spa-danger)] text-[var(--spa-danger)] hover:bg-red-50 hover:text-[var(--spa-danger)]"
+                          onClick={() => { setIsDetailOpen(false); setIsCancelModalOpen(true); }}
+                        >
+                          <XCircle className="w-4 h-4 mr-2" />
+                          Hủy lịch
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -464,7 +567,29 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       {selectedAppointment && (
         <InvoiceFromAppointmentDialog
           isOpen={isInvoiceDialogOpen}
-          onClose={() => setIsInvoiceDialogOpen(false)}
+          onClose={async (isSuccess?: boolean) => {
+            setIsInvoiceDialogOpen(false);
+            if (!isSuccess && previousStatus && selectedAppointment && selectedAppointment.status === 'COMPLETED') {
+              try {
+                toast.promise(
+                  updateAppointmentStatus(selectedAppointment.id, previousStatus as any),
+                  {
+                    loading: 'Khách chưa thanh toán, đang hoàn tác trạng thái lịch hẹn...',
+                    success: () => {
+                      setSelectedAppointment(prev => prev ? { ...prev, status: previousStatus as any } : null);
+                      setPreviousStatus(null);
+                      return `Đã lùi trạng thái về: ${STATUS_LABELS[previousStatus].label}`;
+                    },
+                    error: 'Lỗi hoàn tác trạng thái'
+                  }
+                );
+              } catch (err) {
+                console.error(err);
+              }
+            } else {
+              setPreviousStatus(null);
+            }
+          }}
           appointment={selectedAppointment}
         />
       )}

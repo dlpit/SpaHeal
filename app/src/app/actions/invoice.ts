@@ -232,9 +232,25 @@ export async function createInvoice(data: InvoiceFormValues) {
         timeZone: 'Asia/Ho_Chi_Minh' 
       }).format(now);
 
+      // Cập nhật lại danh sách dịch vụ vào lịch hẹn (sync back)
+      const appointmentServices = itemsForInvoice.map(item => ({
+        serviceId: item.serviceId,
+        serviceName: item.serviceName,
+        quantity: item.quantity,
+        price: item.unitPrice,
+      }));
+
       batch.update(appointmentRef, {
         status: 'COMPLETED',
         endTime: endTime,
+        services: appointmentServices,
+        ...(appointmentServices.length > 0 ? {
+          serviceId: appointmentServices[0].serviceId,
+          serviceName: appointmentServices[0].serviceName,
+        } : {}),
+        staffId: validData.staffId || null,
+        staffName: staffData?.fullName || null,
+        invoiceId: invoiceRef.id,
         updatedAt: serverTimestamp(),
       });
     }
