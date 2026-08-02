@@ -5,9 +5,10 @@ interface PageHeaderProps {
   title: string;
   description?: string;
   icon?: LucideIcon;
+  children?: React.ReactNode;
 }
 
-export function PageHeader({ title, description, icon: Icon }: PageHeaderProps) {
+export function PageHeader({ title, description, icon: Icon, children }: PageHeaderProps) {
   return (
     <div className="flex items-center justify-between space-y-2 mb-6">
       <div>
@@ -21,6 +22,11 @@ export function PageHeader({ title, description, icon: Icon }: PageHeaderProps) 
           </p>
         )}
       </div>
+      {children && (
+        <div className="flex items-center space-x-2">
+          {children}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,13 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import FullCalendar from '@fullcalendar/react';
-import dayGridPlugin from '@fullcalendar/daygrid';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import interactionPlugin from '@fullcalendar/interaction';
-import listPlugin from '@fullcalendar/list';
-import { ClientAppointmentDoc, updateAppointmentTime } from '@/app/actions/appointment-actions';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { ClientAppointmentDoc } from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc } from '@/lib/firestore-types';
+import { PageHeader } from '@/components/ui/page-header';
+import { CustomCalendarGrid } from './custom-calendar-grid';
 import { AppointmentFormModal } from './appointment-form-modal';
 import { InvoiceFromAppointmentDialog } from './invoice-from-appointment-dialog';
 import {
@@ -18,8 +15,12 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { FilePlus, Pencil, X, User, Wrench, Clock } from 'lucide-react';
+import { FilePlus, Pencil, User, Wrench, Clock, CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import listPlugin from '@fullcalendar/list';
+import interactionPlugin from '@fullcalendar/interaction';
 
 interface AppointmentCalendarProps {
   initialAppointments: ClientAppointmentDoc[];
@@ -37,78 +38,128 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   DEPOSIT:     { label: 'Đã đặt cọc',   color: '#06b6d4' },
 };
 
+type ViewMode = 'month' | 'week' | 'day' | 'list';
+
 export function AppointmentCalendar({ initialAppointments, customers }: AppointmentCalendarProps) {
+  const [activeView, setActiveView] = useState<ViewMode>('week');
+  const [isMounted, setIsMounted] = useState(false);
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ClientAppointmentDoc | null>(null);
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
 
-  const events = initialAppointments.map((app) => {
-    // Parse ISO string to local Date to avoid timezone shifting
-    const d = new Date(app.date);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    
-    const start = `${dateStr}T${app.startTime}:00`;
-    let end = undefined;
-    if (app.endTime) end = `${dateStr}T${app.endTime}:00`;
+  const calendarRef = useRef<FullCalendar>(null);
 
-    const statusInfo = STATUS_LABELS[app.status] || { label: app.status, color: 'var(--spa-blush-300)' };
+  // Sync date to FullCalendar when activeView changes to month/list
+  useEffect(() => {
+    if (calendarRef.current) {
+      calendarRef.current.getApi().gotoDate(currentDate);
+      const fcView = activeView === 'month' ? 'dayGridMonth' : 'listWeek';
+      calendarRef.current.getApi().changeView(fcView);
+    }
+  }, [activeView]);
 
-    return {
-      id: app.id,
-      title: `${app.customerName}${app.serviceName ? ` · ${app.serviceName}` : ''}`,
-      start,
-      end,
-      backgroundColor: statusInfo.color,
-      borderColor: statusInfo.color,
-      extendedProps: { ...app },
-    };
-  });
+  const setDateAndSync = (nd: Date) => {
+    setCurrentDate(nd);
+    if (calendarRef.current) {
+      calendarRef.current.getApi().gotoDate(nd);
+    }
+  };
 
-  const handleDateClick = (arg: any) => {
-    setSelectedDateStr(arg.dateStr);
+  const goBack = () => {
+    const nd = new Date(currentDate);
+    if (activeView === 'month') nd.setMonth(nd.getMonth() - 1);
+    else if (activeView === 'week') nd.setDate(nd.getDate() - 7);
+    else nd.setDate(nd.getDate() - 1); // day or list
+    setDateAndSync(nd);
+  };
+
+  const goForward = () => {
+    const nd = new Date(currentDate);
+    if (activeView === 'month') nd.setMonth(nd.getMonth() + 1);
+    else if (activeView === 'week') nd.setDate(nd.getDate() + 7);
+    else nd.setDate(nd.getDate() + 1);
+    setDateAndSync(nd);
+  };
+
+  const goToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setDateAndSync(today);
+  };
+
+  const titleStr = useMemo(() => {
+    if (activeView === 'month') {
+      return currentDate.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+    } else if (activeView === 'day' || activeView === 'list') {
+      return currentDate.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    } else {
+      // week
+      const d = new Date(currentDate);
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      const end = new Date(d);
+      end.setDate(end.getDate() + 6);
+      const s = d.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' });
+      const e = end.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric', year: 'numeric' });
+      return `${s} – ${e}`;
+    }
+  }, [activeView, currentDate]);
+
+  const handleCellClick = (dateTimeStr: string) => {
+    setSelectedDateStr(dateTimeStr);
     setSelectedAppointment(null);
     setIsFormOpen(true);
   };
 
-  const handleEventClick = (arg: any) => {
-    const app = arg.event.extendedProps as ClientAppointmentDoc;
+  const handleAppointmentClick = (app: ClientAppointmentDoc) => {
     setSelectedAppointment(app);
     setSelectedDateStr(null);
     setIsDetailOpen(true);
   };
 
-  const handleEditFromDetail = () => {
-    setIsDetailOpen(false);
+  // FullCalendar event adapters
+  const fcEvents = useMemo(() => {
+    return initialAppointments.map((app) => {
+      const d = new Date(app.date);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const start = `${dateStr}T${app.startTime}:00`;
+      const end = app.endTime ? `${dateStr}T${app.endTime}:00` : undefined;
+      const statusInfo = STATUS_LABELS[app.status] || { label: app.status, color: 'var(--spa-blush-300)' };
+      return {
+        id: app.id,
+        title: `${app.customerName}${app.serviceName ? ` · ${app.serviceName}` : ''}`,
+        start,
+        end,
+        backgroundColor: statusInfo.color,
+        borderColor: statusInfo.color,
+        extendedProps: { ...app },
+      };
+    });
+  }, [initialAppointments]);
+
+  const handleFcDateClick = (arg: any) => {
+    setSelectedDateStr(arg.dateStr);
+    setSelectedAppointment(null);
     setIsFormOpen(true);
   };
 
-  const handleCreateInvoiceFromDetail = () => {
-    setIsDetailOpen(false);
-    setIsInvoiceDialogOpen(true);
-  };
-
-  const handleEventDrop = async (arg: any) => {
-    if (!arg.event.start) { arg.revert(); return; }
-    setIsUpdating(true);
-    try {
-      const padZero = (num: number) => num.toString().padStart(2, '0');
-      const newDate = arg.event.start;
-      const newStartTime = `${padZero(newDate.getHours())}:${padZero(newDate.getMinutes())}`;
-      let newEndTime = null;
-      if (arg.event.end) {
-        newEndTime = `${padZero(arg.event.end.getHours())}:${padZero(arg.event.end.getMinutes())}`;
-      }
-      const res = await updateAppointmentTime(arg.event.id, newDate, newStartTime, newEndTime);
-      if (!res.success) { alert('Cập nhật thất bại'); arg.revert(); }
-    } catch {
-      alert('Đã xảy ra lỗi khi cập nhật thời gian');
-      arg.revert();
-    } finally {
-      setIsUpdating(false);
-    }
+  const handleFcEventClick = (arg: any) => {
+    const app = arg.event.extendedProps as ClientAppointmentDoc;
+    handleAppointmentClick(app);
   };
 
   const detailApp = selectedAppointment;
@@ -116,44 +167,131 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
   const canCreateInvoice = detailApp &&
     !['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(detailApp.status);
 
+  if (!isMounted) {
+    return <div className="w-full min-h-[600px] animate-pulse bg-[var(--spa-warm-50)] rounded-xl border border-[var(--spa-border)]" />;
+  }
+
   return (
-    <div className="w-full bg-white p-4 rounded-xl shadow-sm border border-[var(--spa-border)]">
-      {isUpdating && (
-        <div className="fixed inset-0 bg-black/10 z-50 flex items-center justify-center">
-          <div className="bg-white px-4 py-2 rounded-lg shadow-lg">Đang cập nhật...</div>
+    <div className="w-full">
+      <PageHeader
+        title="Lịch hẹn"
+        description="Xem và quản lý lịch hẹn của khách hàng theo dạng lịch trực quan."
+        icon={CalendarDays}
+      >
+        <Button
+          onClick={() => {
+            setSelectedAppointment(null);
+            setSelectedDateStr(null);
+            setIsFormOpen(true);
+          }}
+          className="bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
+        >
+          <Plus className="mr-2 h-4 w-4" /> Thêm lịch hẹn
+        </Button>
+      </PageHeader>
+
+      {/* Unified Toolbar */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={goBack}
+            aria-label="Trước"
+            className="p-1.5 rounded-md border border-[var(--spa-border)] bg-white hover:bg-[var(--spa-warm-100)] transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4 text-[var(--spa-text-secondary)]" />
+          </button>
+          <button
+            onClick={goForward}
+            aria-label="Tiếp"
+            className="p-1.5 rounded-md border border-[var(--spa-border)] bg-white hover:bg-[var(--spa-warm-100)] transition-colors"
+          >
+            <ChevronRight className="h-4 w-4 text-[var(--spa-text-secondary)]" />
+          </button>
+          <button
+            onClick={goToday}
+            className="px-3 py-1.5 text-sm rounded-md border border-[var(--spa-border)] bg-white hover:bg-[var(--spa-warm-100)] transition-colors text-[var(--spa-text-primary)]"
+          >
+            Hôm nay
+          </button>
+          <span className="font-semibold text-[var(--spa-text-primary)] text-xl ml-4 hidden sm:inline capitalize">
+            {titleStr}
+          </span>
+        </div>
+
+        {/* View toggle */}
+        <div className="flex items-center gap-0.5 bg-[var(--spa-warm-50)] rounded-lg p-1 border border-[var(--spa-border)]">
+          {(['month', 'week', 'day', 'list'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setActiveView(mode)}
+              className={`px-4 py-1.5 text-sm rounded-md transition-colors font-medium capitalize ${
+                activeView === mode
+                  ? 'bg-[var(--spa-blush-300)] text-white shadow-sm'
+                  : 'text-[var(--spa-text-secondary)] hover:bg-[var(--spa-warm-100)]'
+              }`}
+            >
+              {mode === 'month' ? 'Tháng' : mode === 'week' ? 'Tuần' : mode === 'day' ? 'Ngày' : 'DS'}
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      <p className="text-sm font-semibold text-[var(--spa-text-primary)] mb-2 sm:hidden capitalize">{titleStr}</p>
+
+      {/* Conditional Rendering */}
+      {activeView === 'week' || activeView === 'day' ? (
+        <CustomCalendarGrid
+          appointments={initialAppointments}
+          currentDate={currentDate}
+          viewMode={activeView}
+          onCellClick={handleCellClick}
+          onAppointmentClick={handleAppointmentClick}
+        />
+      ) : (
+        <div className="w-full bg-white p-4 rounded-xl shadow-sm border border-[var(--spa-border)]">
+          <style dangerouslySetInnerHTML={{__html: `
+            .fc { --fc-page-bg-color: transparent; --fc-neutral-bg-color: var(--spa-warm-50); --fc-neutral-text-color: var(--spa-text-primary); --fc-border-color: var(--spa-border); --fc-button-text-color: var(--spa-text-primary); --fc-button-bg-color: #fff; --fc-button-border-color: var(--spa-border); --fc-button-hover-bg-color: var(--spa-warm-100); --fc-button-hover-border-color: var(--spa-border); --fc-button-active-bg-color: var(--spa-blush-200); --fc-button-active-border-color: var(--spa-blush-300); --fc-button-active-text-color: #000; --fc-event-bg-color: var(--spa-blush-300); --fc-event-border-color: var(--spa-blush-300); --fc-event-text-color: #fff; --fc-event-selected-overlay-color: rgba(0,0,0,0.25); --fc-more-link-bg-color: var(--spa-warm-100); --fc-more-link-text-color: var(--spa-text-primary); --fc-today-bg-color: var(--spa-warm-100); font-family: inherit; }
+            .fc .fc-toolbar-title { display: none; }
+            .fc-event { border-radius: 4px; padding: 2px; }
+          `}} />
+          <FullCalendar
+            ref={calendarRef}
+            plugins={[dayGridPlugin as any, listPlugin as any, interactionPlugin as any]}
+            initialView={activeView === 'month' ? 'dayGridMonth' : 'listWeek'}
+            initialDate={currentDate}
+            headerToolbar={false}
+            events={fcEvents}
+            dateClick={handleFcDateClick}
+            eventClick={handleFcEventClick}
+            height="auto"
+            locale="vi"
+            dayMaxEvents={true}
+            dayCellClassNames="group relative"
+            dayCellContent={(arg: any) => {
+              const d = arg.date;
+              const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              return (
+                <>
+                  <div className="fc-daygrid-day-number">{arg.dayNumberText}</div>
+                  <button
+                    type="button"
+                    title="Thêm lịch hẹn"
+                    className="absolute bottom-1 right-1 p-1 rounded-md bg-white border border-[var(--spa-border)] text-[var(--spa-text-secondary)] shadow-sm hover:text-[var(--spa-blush-400)] hover:border-[var(--spa-blush-300)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all z-20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCellClick(dateStr);
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </>
+              );
+            }}
+          />
         </div>
       )}
 
-      {/* Styling FullCalendar theo theme SPA HEAL */}
-      <style dangerouslySetInnerHTML={{__html: `
-        .fc { --fc-page-bg-color: transparent; --fc-neutral-bg-color: var(--spa-warm-50); --fc-neutral-text-color: var(--spa-text-primary); --fc-border-color: var(--spa-border); --fc-button-text-color: var(--spa-text-primary); --fc-button-bg-color: #fff; --fc-button-border-color: var(--spa-border); --fc-button-hover-bg-color: var(--spa-warm-100); --fc-button-hover-border-color: var(--spa-border); --fc-button-active-bg-color: var(--spa-blush-200); --fc-button-active-border-color: var(--spa-blush-300); --fc-button-active-text-color: #000; --fc-event-bg-color: var(--spa-blush-300); --fc-event-border-color: var(--spa-blush-300); --fc-event-text-color: #fff; --fc-event-selected-overlay-color: rgba(0,0,0,0.25); --fc-more-link-bg-color: var(--spa-warm-100); --fc-more-link-text-color: var(--spa-text-primary); --fc-today-bg-color: var(--spa-warm-100); font-family: inherit; }
-        .fc .fc-toolbar-title { font-family: var(--font-serif, ui-serif, serif); font-size: 1.5rem; color: var(--spa-text-primary); }
-        .fc .fc-button { padding: 0.4rem 0.75rem; font-size: 0.875rem; border-radius: 0.375rem; text-transform: capitalize; transition: all 0.2s ease; }
-        .fc .fc-button-primary:not(:disabled):active, .fc .fc-button-primary:not(:disabled).fc-button-active { background-color: var(--spa-blush-300) !important; border-color: var(--spa-blush-400) !important; color: white !important; }
-      `}} />
-
-      <FullCalendar
-        plugins={[dayGridPlugin as any, timeGridPlugin as any, interactionPlugin as any, listPlugin as any]}
-        initialView="timeGridWeek"
-        headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek' }}
-        allDaySlot={false}
-        slotMinTime="08:00:00"
-        slotMaxTime="22:00:00"
-        events={events}
-        editable={true}
-        droppable={true}
-        selectable={true}
-        selectMirror={true}
-        dayMaxEvents={true}
-        weekends={true}
-        dateClick={handleDateClick}
-        eventClick={handleEventClick}
-        eventDrop={handleEventDrop}
-        height="auto"
-        locale="vi"
-      />
-
-      {/* Form Modal: Tạo/Sửa lịch hẹn */}
+      {/* Form Modal */}
       <AppointmentFormModal
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
@@ -162,7 +300,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
         selectedDateStr={selectedDateStr}
       />
 
-      {/* Detail Dialog: Xem chi tiết lịch hẹn */}
+      {/* Detail Dialog */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
         <DialogContent className="sm:max-w-[420px] bg-[var(--spa-warm-50)] border-[var(--spa-border)]">
           <DialogHeader>
@@ -176,7 +314,6 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
 
           {detailApp && (
             <div className="space-y-4 py-2">
-              {/* Trạng thái */}
               {detailStatus && (
                 <div className="flex justify-center">
                   <span
@@ -219,18 +356,17 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
 
                 {detailApp.notes && (
                   <div className="p-3 bg-white rounded-lg border border-[var(--spa-border)] text-[var(--spa-text-secondary)] text-xs italic">
-                    "{detailApp.notes}"
+                    &ldquo;{detailApp.notes}&rdquo;
                   </div>
                 )}
               </div>
 
-              {/* Actions */}
               <div className="flex gap-2 pt-2">
                 <Button
                   variant="outline"
                   size="sm"
                   className="flex-1 border-[var(--spa-border)]"
-                  onClick={handleEditFromDetail}
+                  onClick={() => { setIsDetailOpen(false); setIsFormOpen(true); }}
                 >
                   <Pencil className="w-4 h-4 mr-2" />
                   Chỉnh sửa
@@ -240,7 +376,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                   <Button
                     size="sm"
                     className="flex-1 bg-[var(--spa-blush-300)] hover:bg-[var(--spa-blush-400)] text-white"
-                    onClick={handleCreateInvoiceFromDetail}
+                    onClick={() => { setIsDetailOpen(false); setIsInvoiceDialogOpen(true); }}
                   >
                     <FilePlus className="w-4 h-4 mr-2" />
                     Tạo hóa đơn
@@ -252,7 +388,6 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
         </DialogContent>
       </Dialog>
 
-      {/* Invoice Dialog: Tạo hóa đơn từ lịch hẹn */}
       {selectedAppointment && (
         <InvoiceFromAppointmentDialog
           isOpen={isInvoiceDialogOpen}

@@ -1,7 +1,10 @@
 ---
-description: Quy trình thực thi task coding với brainstorming, execution và lưu learning tự đ
+description: Quy trình thực thi task coding với brainstorming, execution và lưu learning tự động
 ---
 
+---
+description: Quy trình thực thi task coding với brainstorming, execution và lưu learning tự đ
+---
 ---
 name: spa-task-execution
 description: >
@@ -29,24 +32,11 @@ last_updated: "2026-07-31"
 > trừ khi thuộc danh sách ngoại lệ (exceptions) trong frontmatter.
 ---
 ## Tổng Quan Pipeline
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│   Pha 1              Pha 2           Pha 3          Pha 4       │
-│  BRAINSTORMING  →  LÊN PLAN  →   EXECUTE   →    VERIFY         │
-│  (Hiểu & Chốt)    (Checklist)    (Code)      (Review & Test)   │
-│       │                                            │            │
-│       │              🔒 GATE 1              🔒 GATE 2           │
-│       │           (User xác nhận)        (Không còn lỗi)        │
-│       │                                            │            │
-│       └────────────────────────────────────────────┘            │
-│                                                     ↓           │
-│                                                  Pha 5          │
-│                                               AI LEARNING       │
-│                                            (Lưu trữ kiến thức) │
-│                                                                 
-└─────────────────────────────────────────────────────────────────┘
-```
+1. **Pha 1: BRAINSTORMING** (Hiểu & Chốt) → 🔒 **GATE 1** (User xác nhận)
+2. **Pha 2: LÊN PLAN** (Checklist)
+3. **Pha 3: EXECUTE** (Code)
+4. **Pha 4: VERIFY** (Review & Test) → 🔒 **GATE 2** (Không còn lỗi)
+5. **Pha 5: AI LEARNING** (Lưu trữ kiến thức)
 ---
 ## Pha 1: BRAINSTORMING — Hiểu Sâu & Chốt Thiết Kế
 > **Mục tiêu:** Đảm bảo AI hiểu đúng 100% ý định của User trước khi viết bất kỳ dòng code nào.
@@ -75,14 +65,12 @@ last_updated: "2026-07-31"
   - Mọi quyết định thiết kế ở bước 1.2 **PHẢI** tương thích với bộ luật này.
   - Nếu có xung đột giữa ý tưởng brainstorm và bộ luật → **bộ luật LUÔN THẮNG**.
 ### 🔒 GATE 1 — Cổng Chặn Bắt Buộc
-> **TUYỆT ĐỐI KHÔNG** chuyển sang Pha 2 nếu chưa thỏa mãn **TẤT CẢ** điều kiện sau:
-| # | Điều kiện                                                    | Trạng thái |
-|---|--------------------------------------------------------------|------------|
-| 1 | Đã đạt **Understanding Lock** (User xác nhận hiểu đúng ý)   | ⬜         |
-| 2 | Đã trình bày thiết kế và **User chấp thuận** (explicit approval) | ⬜         |
-| 3 | Decision Log đã được ghi nhận đầy đủ                          | ⬜         |
-| 4 | Thiết kế **không vi phạm** bất kỳ quy tắc nào trong `ui-colors.md`, `ui-layout.md`, `code-style.md` | ⬜         |
-**Nếu User từ chối hoặc yêu cầu thay đổi → quay lại bước 1.2, KHÔNG được tự ý tiến tiếp.**
+**TUYỆT ĐỐI KHÔNG** chuyển sang Pha 2 nếu chưa thỏa mãn:
+- [ ] Đạt **Understanding Lock** (User xác nhận hiểu đúng ý).
+- [ ] Đã trình bày thiết kế và **User chấp thuận**.
+- [ ] Ghi nhận đầy đủ Decision Log.
+- [ ] Thiết kế tuân thủ `ui-colors.md`, `ui-layout.md`, `code-style.md`.
+**Nếu User từ chối → quay lại 1.2, KHÔNG tự ý tiến tiếp.**
 ---
 ## Pha 2: LÊN PLAN — Task Checklist Chi Tiết
 > **Mục tiêu:** Biến thiết kế đã chốt thành danh sách công việc cụ thể, có thể thực thi từng bước.
@@ -132,18 +120,15 @@ last_updated: "2026-07-31"
   - **PHẢI** đánh dấu `[x]` ngay sau khi hoàn thành mỗi sub-task.
   - **TUYỆT ĐỐI KHÔNG** nhảy cóc hoặc làm song song nhiều sub-task cùng lúc.
   **Quy tắc code bắt buộc:**
-  | Quy tắc | Mô tả |
-  |---------|--------|
-  | Màu sắc | **PHẢI** dùng CSS variable `--spa-*` — **KHÔNG** hard-code hex |
-  | Component | **PHẢI** ≤ 150 dòng/file — vượt thì tách sub-component |
-  | Layout | **PHẢI** Mobile-First — class mặc định cho mobile |
-  | shadcn/ui | **PHẢI** import từ `@/components/ui/*` — **KHÔNG** tự viết lại |
-  | Class merge | **PHẢI** dùng `cn()` từ `@/lib/utils` — **KHÔNG** string concat |
-  | TypeScript | **PHẢI** khai báo type cho mọi prop — **KHÔNG** dùng `any` |
-  | State | **PHẢI** ưu tiên RSC — chỉ dùng `"use client"` khi thực sự cần |
-  | Images | **PHẢI** dùng `next/image` — **KHÔNG** dùng `<img>` thuần |
-  | Links | **PHẢI** dùng `next/link` — **KHÔNG** dùng `<a>` thuần cho internal |
-  | Animation | **PHẢI** `duration-300` trở lên — **KHÔNG** animation nhanh < 200ms |
+  - **Màu sắc:** Dùng var `--spa-*`, KHÔNG hard-code.
+  - **Component:** ≤ 150 dòng/file.
+  - **Layout:** Mobile-First.
+  - **shadcn/ui:** Import từ `@/components/ui/*`.
+  - **Class:** Dùng `cn()` từ `@/lib/utils`.
+  - **TS:** Khai báo type, KHÔNG dùng `any`.
+  - **State:** Ưu tiên RSC, hạn chế `"use client"`.
+  - **Hình/Link:** Dùng `next/image`, `next/link`.
+  - **Animation:** ≥ `duration-300`.
 - [ ] **3.3 — Cập nhật tiến độ:**
   - Sau mỗi task lớn (không phải sub-task), báo cáo ngắn cho User:
     ```
@@ -198,15 +183,12 @@ last_updated: "2026-07-31"
     - [ ] Touch target ≥ 44px trên mobile
     - [ ] Animation có `prefers-reduced-motion` fallback
 ### 🔒 GATE 2 — Cổng Chặn Bắt Buộc
-> **TUYỆT ĐỐI KHÔNG** chuyển sang Pha 5 nếu chưa thỏa mãn **TẤT CẢ** điều kiện sau:
-| # | Điều kiện                                                    | Trạng thái |
-|---|--------------------------------------------------------------|------------|
-| 1 | Code review (`@code-reviewer`) đã pass — không còn issue critical/major | ⬜         |
-| 2 | Responsive đúng ở cả 3 breakpoint (Mobile, Tablet, Desktop)  | ⬜         |
-| 3 | Không còn bug nào chưa fix (nếu đã gọi `@bug-hunter`)        | ⬜         |
-| 4 | Code Quality Checklist (12 điểm) đã pass hết                  | ⬜         |
-| 5 | Không có console error (JavaScript/TypeScript)                 | ⬜         |
-**Nếu bất kỳ điều kiện nào chưa đạt → quay lại bước tương ứng trong Pha 3 hoặc 4, KHÔNG được tiến tiếp.**
+**TUYỆT ĐỐI KHÔNG** chuyển sang Pha 5 nếu chưa thỏa mãn:
+- [ ] Pass `@code-reviewer`, không còn issue critical/major.
+- [ ] Responsive đúng ở 3 breakpoint (Mobile, Tablet, Desktop).
+- [ ] Không còn bug, không có console error.
+- [ ] Pass 12 điểm Code Quality Checklist.
+**Nếu chưa đạt → quay lại bước tương ứng Pha 3 hoặc 4.**
 ---
 ## Pha 5: AI LEARNING — Lưu Trữ Kiến Thức
 > **Mục tiêu:** Trích xuất và lưu trữ kiến thức từ task vừa hoàn thành để phục vụ các task tương lai.
@@ -219,4 +201,5 @@ last_updated: "2026-07-31"
   > - **Có** → AI sẽ phân tích và trích xuất kiến thức hữu ích.
   > - **Không** → Kết thúc task, không lưu gì thêm.
 - [ ] **5.2 — Phân tích & Trích xuất (nếu User chọn "Có"):**
-  - AI **PHẢI** tự phân tích toàn bộ hộ
+- Tự phân tích ngữ cảnh và lưu kiến thức vào thư mục `.agents/learnings/`.
+- Cập nhật các file liên quan như `patterns.md`, `bugs-solutions.md`.

@@ -222,3 +222,34 @@ export async function getServicesForAppointment() {
     return [];
   }
 }
+
+/**
+ * Tìm kiếm dịch vụ với từ khóa, trả về danh sách giới hạn cho combobox
+ */
+export async function searchServices(query: string = '') {
+  try {
+    const q = query.trim().toLowerCase();
+    
+    const snapshot = await db.collection(COLLECTIONS.SERVICES)
+      .where('isActive', '==', true)
+      .get();
+      
+    let services = snapshot.docs.map(doc => {
+      const data = doc.data() as ServiceDoc;
+      return { id: doc.id, name: data.name, price: data.price, code: data.code };
+    });
+
+    if (q) {
+      services = services.filter(s => 
+        (s.name || '').toLowerCase().includes(q) || 
+        (s.code || '').toLowerCase().includes(q)
+      );
+    }
+    
+    // Sắp xếp in-memory theo tên và giới hạn 20 kết quả
+    return services.sort((a, b) => (a.name || '').localeCompare(b.name || '')).slice(0, 20);
+  } catch (error) {
+    console.error('Error searching services:', error);
+    throw new Error('Không thể tìm kiếm dịch vụ');
+  }
+}

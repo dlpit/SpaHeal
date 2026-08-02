@@ -21,14 +21,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format, parse } from 'date-fns';
+import { CalendarIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { CustomerCombobox } from '@/components/khach-hang/customer-combobox';
 import { CustomerFormDialog } from '@/components/khach-hang/customer-form-dialog';
+import { ServiceCombobox } from '@/components/dich-vu/service-combobox';
 import { appointmentSchema, AppointmentFormValues } from '@/lib/schemas/appointment';
 import {
   createAppointment,
   updateAppointment,
   ClientAppointmentDoc,
-  getServicesForAppointment,
   getStaffForAppointment,
 } from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc } from '@/lib/firestore-types';
@@ -53,9 +58,9 @@ export function AppointmentFormModal({
 }: AppointmentFormModalProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [services, setServices] = useState<ServiceOption[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const isEditing = !!appointment;
 
@@ -89,15 +94,12 @@ export function AppointmentFormModal({
     },
   });
 
-  // Fetch services & staff khi modal mở lần đầu
+  // Fetch staff khi modal mở lần đầu
   useEffect(() => {
-    if (isOpen && services.length === 0) {
-      Promise.all([getServicesForAppointment(), getStaffForAppointment()]).then(
-        ([svcList, stfList]) => {
-          setServices(svcList);
-          setStaffList(stfList);
-        }
-      );
+    if (isOpen && staffList.length === 0) {
+      getStaffForAppointment().then((stfList) => {
+        setStaffList(stfList);
+      });
     }
   }, [isOpen]);
 
@@ -119,6 +121,23 @@ export function AppointmentFormModal({
           status: appointment.status,
         });
       } else {
+        const now = new Date();
+        let initialDate = formatDateForInput(now);
+        let initialStartTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        if (selectedDateStr) {
+          if (selectedDateStr.includes('T')) {
+            // Clicked on a time slot in TimeGrid (e.g. 2024-05-15T14:30:00+07:00)
+            const d = new Date(selectedDateStr);
+            initialDate = formatDateForInput(d);
+            initialStartTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          } else {
+            // Clicked on DayGrid without specific time (e.g. 2024-05-15)
+            // Lấy nguyên chuỗi ngày (YYYY-MM-DD) để tránh lỗi parse UTC bị lùi 1 ngày ở một số timezone
+            initialDate = selectedDateStr;
+          }
+        }
+
         reset({
           customerId: '',
           customerName: '',
@@ -126,8 +145,8 @@ export function AppointmentFormModal({
           serviceName: null,
           staffId: null,
           staffName: null,
-          date: selectedDateStr ? formatDateForInput(selectedDateStr) as any : formatDateForInput(new Date()) as any,
-          startTime: '09:00',
+          date: initialDate as any,
+          startTime: initialStartTime,
           endTime: '',
           notes: '',
           deposit: 0,
@@ -180,8 +199,7 @@ export function AppointmentFormModal({
       return;
     }
     setValue('serviceId', val, { shouldValidate: true });
-    const svc = services.find(s => s.id === val);
-    if (svc) setValue('serviceName', svc.name, { shouldValidate: true });
+    // Dữ liệu serviceName sẽ được set qua onServiceSelected của Combobox
   };
 
   const onStaffChange = (val: string) => {
@@ -196,9 +214,10 @@ export function AppointmentFormModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[520px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-[520px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
           <DialogTitle className="text-[var(--spa-text-primary)] font-serif text-xl">
             {isEditing ? 'Chỉnh sửa lịch hẹn' : 'Thêm lịch hẹn mới'}
           </DialogTitle>
@@ -232,28 +251,16 @@ export function AppointmentFormModal({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-[var(--spa-text-primary)]">Dịch vụ</Label>
-              <Select
-                value={selectedServiceId || '__none__'}
-                onValueChange={(val: string | null) => onServiceChange(val || '__none__')}
-              >
-                <SelectTrigger>
-                  <span data-slot="select-value" className={`flex flex-1 text-left truncate ${!selectedServiceId ? 'text-muted-foreground' : ''}`}>
-                    {(() => {
-                      if (!selectedServiceId) return "— Chưa chọn —";
-                      const s = services.find(x => x.id === selectedServiceId);
-                      return s ? s.name : "— Chưa chọn —";
-                    })()}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— Chưa chọn —</SelectItem>
-                  {services.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ServiceCombobox
+                value={selectedServiceId}
+                initialServices={
+                  selectedServiceId && watch('serviceName')
+                    ? [{ id: selectedServiceId, name: watch('serviceName') as string, code: '', price: 0 }]
+                    : []
+                }
+                onValueChange={(val) => onServiceChange(val)}
+                onServiceSelected={(s) => setValue('serviceName', s.name, { shouldValidate: true })}
+              />
             </div>
 
             <div className="space-y-2">
@@ -287,11 +294,37 @@ export function AppointmentFormModal({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-[var(--spa-text-primary)]">Ngày hẹn <span className="text-red-500">*</span></Label>
-              <Input
-                type="date"
-                {...register('date')}
-                className={errors.date ? 'border-[var(--spa-danger)]' : ''}
-              />
+              <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal border-[var(--spa-border)]",
+                        !watch('date') && "text-muted-foreground",
+                        errors.date && "border-[var(--spa-danger)]"
+                      )}
+                    />
+                  }
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {watch('date') 
+                    ? format(parse(watch('date') as string, 'yyyy-MM-dd', new Date()), "dd/MM/yyyy") 
+                    : <span>Chọn ngày</span>}
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 z-[100]">
+                  <Calendar
+                    mode="single"
+                    selected={watch('date') ? parse(watch('date') as string, 'yyyy-MM-dd', new Date()) : undefined}
+                    onSelect={(date) => {
+                      if (date) {
+                        setValue('date', format(date, 'yyyy-MM-dd') as any, { shouldValidate: true });
+                      }
+                      setIsCalendarOpen(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
               {errors.date && <p className="text-xs text-[var(--spa-danger)]">{errors.date.message}</p>}
             </div>
 
@@ -354,7 +387,7 @@ export function AppointmentFormModal({
             <Input
               type="number"
               placeholder="0"
-              {...register('deposit')}
+              {...register('deposit', { valueAsNumber: true })}
               className={errors.deposit ? 'border-[var(--spa-danger)]' : ''}
             />
           </div>
@@ -386,6 +419,7 @@ export function AppointmentFormModal({
           </DialogFooter>
         </form>
       </DialogContent>
+      </Dialog>
 
       <CustomerFormDialog
         open={isCustomerModalOpen}
@@ -397,6 +431,6 @@ export function AppointmentFormModal({
         }}
         customer={null}
       />
-    </Dialog>
+    </>
   );
 }

@@ -220,11 +220,21 @@ export async function createInvoice(data: InvoiceFormValues) {
       updatedAt: serverTimestamp(),
     });
 
-    // Nếu hóa đơn được tạo từ lịch hẹn → tự động chuyển trạng thái sang COMPLETED
+    // Nếu hóa đơn được tạo từ lịch hẹn → tự động chuyển trạng thái sang COMPLETED và chốt Giờ kết thúc
     if (validData.appointmentId) {
       const appointmentRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(validData.appointmentId);
+      
+      const now = new Date();
+      const endTime = new Intl.DateTimeFormat('en-GB', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Ho_Chi_Minh' 
+      }).format(now);
+
       batch.update(appointmentRef, {
         status: 'COMPLETED',
+        endTime: endTime,
         updatedAt: serverTimestamp(),
       });
     }
