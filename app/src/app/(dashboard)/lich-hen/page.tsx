@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { getAppointments } from '@/app/actions/appointment-actions';
-import { getCustomers } from '@/app/actions/customer';
+import { getFrequentCustomers } from '@/app/actions/customer';
 import { AppointmentCalendar } from './components/appointment-calendar';
 
 export const metadata: Metadata = {
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default async function AppointmentsPage() {
   const [appointments, customers] = await Promise.all([
     getAppointments(),
-    getCustomers()
+    getFrequentCustomers(20)
   ]);
 
   return (

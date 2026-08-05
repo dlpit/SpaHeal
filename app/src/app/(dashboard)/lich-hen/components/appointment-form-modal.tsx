@@ -60,6 +60,7 @@ export function AppointmentFormModal({
   const [error, setError] = useState<string | null>(null);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [isDepositFocused, setIsDepositFocused] = useState(false);
   const isCalendarOpenState = useState(false);
   const isCalendarOpen = isCalendarOpenState[0];
   const setIsCalendarOpen = isCalendarOpenState[1];
@@ -203,6 +204,14 @@ export function AppointmentFormModal({
 
   const selectedStatus = watch('status');
   const selectedStaffId = watch('staffId');
+  const depositVal = watch('deposit') ?? 0;
+
+  const formatDisplayDeposit = (val: number | null | undefined, isFocused: boolean) => {
+    if (val === null || val === undefined || isNaN(val) || val === 0) {
+      return isFocused ? '' : '0';
+    }
+    return new Intl.NumberFormat('vi-VN').format(val);
+  };
 
   const onCustomerChange = (val: string) => {
     setValue('customerId', val, { shouldValidate: true });
@@ -423,7 +432,7 @@ export function AppointmentFormModal({
               <Select
                 value={selectedStatus}
                 onValueChange={(val: any) => setValue('status', val, { shouldValidate: true })}
-                disabled={isReadOnly || (isEditing && ['COMPLETED', 'CANCELLED'].includes(appointment?.status || ''))}
+                disabled={isEditing || isReadOnly} // Disable completely on edit, force users to use quick actions
               >
                 <SelectTrigger>
                   <span data-slot="select-value" className="flex flex-1 text-left truncate">
@@ -440,28 +449,103 @@ export function AppointmentFormModal({
                   </span>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CONFIRMED">Đã xác nhận</SelectItem>
-                  <SelectItem value="ARRIVED">Đã đến</SelectItem>
-                  <SelectItem value="IN_PROGRESS">Đang làm</SelectItem>
-                  <SelectItem value="COMPLETED" disabled={isEditing && appointment?.status !== 'COMPLETED'}>Hoàn thành</SelectItem>
-                  <SelectItem value="CANCELLED" disabled={isEditing && appointment?.status !== 'CANCELLED'}>Đã hủy</SelectItem>
-                  <SelectItem value="RESCHEDULED">Dời lịch</SelectItem>
-                  <SelectItem value="NO_SHOW">Không đến</SelectItem>
-                  <SelectItem value="DEPOSIT">Đã đặt cọc</SelectItem>
+                  {!isEditing ? (
+                    <>
+                      <SelectItem value="CONFIRMED">Đã xác nhận</SelectItem>
+                      <SelectItem value="DEPOSIT">Đã đặt cọc</SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      <SelectItem value="CONFIRMED">Đã xác nhận</SelectItem>
+                      <SelectItem value="ARRIVED">Đã đến</SelectItem>
+                      <SelectItem value="IN_PROGRESS">Đang làm</SelectItem>
+                      <SelectItem value="COMPLETED">Hoàn thành</SelectItem>
+                      <SelectItem value="CANCELLED">Đã hủy</SelectItem>
+                      <SelectItem value="RESCHEDULED">Dời lịch</SelectItem>
+                      <SelectItem value="NO_SHOW">Không đến</SelectItem>
+                      <SelectItem value="DEPOSIT">Đã đặt cọc</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-[var(--spa-text-primary)]">Tiền đặt cọc (VND)</Label>
-            <Input
-              type="number"
-              placeholder="0"
-              {...register('deposit', { valueAsNumber: true })}
-              className={cn(errors.deposit ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
-              readOnly={isReadOnly}
-            />
+          {/* Tiền đặt cọc */}
+          <div className="space-y-1.5">
+            <Label className="text-[var(--spa-text-primary)] font-medium">Tiền đặt cọc</Label>
+            <div className="relative">
+              <Input
+                type="text"
+                inputMode="numeric"
+                placeholder="0"
+                maxLength={15}
+                value={formatDisplayDeposit(depositVal, isDepositFocused)}
+                onFocus={() => setIsDepositFocused(true)}
+                onBlur={() => setIsDepositFocused(false)}
+                aria-invalid={!!errors.deposit}
+                onKeyDown={(e) => {
+                  if (['-', '+', 'e', 'E', '.', ','].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '').slice(0, 12);
+                  const num = raw === '' ? 0 : parseInt(raw, 10);
+                  setValue('deposit', num, { shouldValidate: true });
+                }}
+                className={cn(
+                  "pr-8 font-semibold text-[var(--spa-text-primary)]",
+                  errors.deposit ? 'border-[var(--spa-danger)]' : '',
+                  isReadOnly && 'opacity-50 pointer-events-none'
+                )}
+                readOnly={isReadOnly}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground pointer-events-none">
+                đ
+              </span>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-xs text-muted-foreground mr-1">Chọn nhanh:</span>
+              {[
+                { label: '50k', value: 50000 },
+                { label: '100k', value: 100000 },
+                { label: '200k', value: 200000 },
+                { label: '500k', value: 500000 },
+              ].map((preset) => (
+                <Button
+                  key={preset.value}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isReadOnly}
+                  className={cn(
+                    "h-7 px-2.5 text-xs font-medium border-[var(--spa-border)] hover:bg-[var(--spa-warm-100)] hover:text-[var(--spa-primary)] transition-colors",
+                    depositVal === preset.value && "bg-[var(--spa-warm-200)] border-[var(--spa-primary)] text-[var(--spa-primary)] font-semibold"
+                  )}
+                  onClick={() => setValue('deposit', preset.value, { shouldValidate: true })}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+              {depositVal > 0 && !isReadOnly && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => setValue('deposit', 0, { shouldValidate: true })}
+                >
+                  Xóa cọc
+                </Button>
+              )}
+            </div>
+
+            {errors.deposit && (
+              <p className="text-xs text-[var(--spa-danger)]">{errors.deposit.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">

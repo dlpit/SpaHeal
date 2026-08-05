@@ -2,12 +2,13 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { ClientAppointmentDoc, updateAppointmentStatus } from '@/app/actions/appointment-actions';
-import { ClientCustomerDoc } from '@/lib/firestore-types';
+import { ClientCustomerDoc, AppointmentStatus } from '@/lib/firestore-types';
 import { PageHeader } from '@/components/ui/page-header';
 import { CustomCalendarGrid } from './custom-calendar-grid';
 import { AppointmentFormModal } from './appointment-form-modal';
 import { InvoiceFromAppointmentDialog } from './invoice-from-appointment-dialog';
 import { CancelAppointmentModal } from './cancel-appointment-modal';
+import { APPOINTMENT_TRANSITIONS, STATUS_LABELS } from '@/lib/constants/appointment';
 import {
   Dialog,
   DialogContent,
@@ -37,17 +38,6 @@ interface AppointmentCalendarProps {
   customers: ClientCustomerDoc[];
 }
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  CONFIRMED:   { label: 'Đã xác nhận',  color: '#3b82f6' },
-  ARRIVED:     { label: 'Đã đến',        color: '#eab308' },
-  IN_PROGRESS: { label: 'Đang thực hiện', color: '#f97316' },
-  COMPLETED:   { label: 'Hoàn thành',   color: '#22c55e' },
-  CANCELLED:   { label: 'Đã hủy',       color: '#ef4444' },
-  RESCHEDULED: { label: 'Dời lịch',     color: '#8b5cf6' },
-  NO_SHOW:     { label: 'Không đến',    color: '#6b7280' },
-  DEPOSIT:     { label: 'Đã đặt cọc',   color: '#06b6d4' },
-};
-
 type ViewMode = 'month' | 'week' | 'day' | 'list';
 
 export function AppointmentCalendar({ initialAppointments, customers }: AppointmentCalendarProps) {
@@ -56,7 +46,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
   const [showCancelled, setShowCancelled] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [previousStatus, setPreviousStatus] = useState<string | null>(null);
+  const [previousStatus, setPreviousStatus] = useState<AppointmentStatus | null>(null);
   const [currentDate, setCurrentDate] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -75,7 +65,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
 
   const calendarRef = useRef<FullCalendar>(null);
 
-  const handleStatusUpdate = async (status: string, forceInvoice: boolean = false) => {
+  const handleStatusUpdate = async (status: AppointmentStatus, forceInvoice: boolean = false) => {
     if (!selectedAppointment) return;
     setIsUpdatingStatus(true);
     
@@ -84,12 +74,12 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
     }
 
     try {
-      const res = await updateAppointmentStatus(selectedAppointment.id, status as any);
+      const res = await updateAppointmentStatus(selectedAppointment.id, status);
       if (res.success) {
         toast.success(`Đã cập nhật trạng thái thành: ${STATUS_LABELS[status].label}`);
         
         // Luôn cập nhật local state để view thay đổi liền mạch và logic revert hoạt động đúng
-        setSelectedAppointment({ ...selectedAppointment, status: status as any });
+        setSelectedAppointment({ ...selectedAppointment, status });
 
         if (status === 'COMPLETED' || forceInvoice) {
           setIsDetailOpen(false);
@@ -440,7 +430,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
               <div className="flex flex-col gap-3 pt-4 border-t border-[var(--spa-border)] mt-4">
                 {/* QUICK ACTIONS ROW */}
                 <div className="grid grid-cols-2 gap-2">
-                  {detailApp.status === 'CONFIRMED' && (
+                  {APPOINTMENT_TRANSITIONS[detailApp.status]?.includes('ARRIVED') && (
                     <Button 
                       size="sm" 
                       className="w-full bg-blue-500 hover:bg-blue-600 text-white"
@@ -451,7 +441,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                       Khách đã đến
                     </Button>
                   )}
-                  {detailApp.status === 'ARRIVED' && (
+                  {APPOINTMENT_TRANSITIONS[detailApp.status]?.includes('IN_PROGRESS') && (
                     <Button 
                       size="sm" 
                       className="w-full bg-orange-500 hover:bg-orange-600 text-white"
@@ -462,7 +452,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                       Bắt đầu làm
                     </Button>
                   )}
-                  {detailApp.status === 'IN_PROGRESS' && (
+                  {detailApp.status === 'IN_PROGRESS' && APPOINTMENT_TRANSITIONS[detailApp.status]?.includes('COMPLETED') && (
                     <Button 
                       size="sm" 
                       className="w-full bg-green-500 hover:bg-green-600 text-white"
@@ -473,7 +463,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                       Hoàn thành
                     </Button>
                   )}
-                  {['CANCELLED', 'NO_SHOW'].includes(detailApp.status) && (
+                  {['CANCELLED', 'NO_SHOW'].includes(detailApp.status) && APPOINTMENT_TRANSITIONS[detailApp.status]?.includes('CONFIRMED') && (
                     <Button 
                       size="sm" 
                       className="w-full bg-indigo-500 hover:bg-indigo-600 text-white"
@@ -572,15 +562,19 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
             if (!isSuccess && previousStatus && selectedAppointment && selectedAppointment.status === 'COMPLETED') {
               try {
                 toast.promise(
-                  updateAppointmentStatus(selectedAppointment.id, previousStatus as any),
+                  updateAppointmentStatus(selectedAppointment.id, previousStatus, true).then(res => {
+                    if (!res.success) throw new Error(res.error);
+                    return res;
+                  }),
                   {
                     loading: 'Khách chưa thanh toán, đang hoàn tác trạng thái lịch hẹn...',
                     success: () => {
-                      setSelectedAppointment(prev => prev ? { ...prev, status: previousStatus as any } : null);
+                      const revertedLabel = STATUS_LABELS[previousStatus]?.label ?? previousStatus;
+                      setSelectedAppointment(prev => prev ? { ...prev, status: previousStatus } : null);
                       setPreviousStatus(null);
-                      return `Đã lùi trạng thái về: ${STATUS_LABELS[previousStatus].label}`;
+                      return `Đã lùi trạng thái về: ${revertedLabel}`;
                     },
-                    error: 'Lỗi hoàn tác trạng thái'
+                    error: (err) => err.message || 'Lỗi hoàn tác trạng thái'
                   }
                 );
               } catch (err) {

@@ -61,9 +61,13 @@ export async function getNextSequence(counterName: string): Promise<number> {
  * Format: HD{YYMMDD}-{SEQ} e.g. "HD260801-001"
  */
 export async function generateInvoiceCode(date: Date): Promise<string> {
-  const yy = date.getFullYear().toString().slice(-2);
-  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-  const dd = date.getDate().toString().padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'Asia/Ho_Chi_Minh'
+  });
+  const parts = formatter.formatToParts(date);
+  const dd = parts.find(p => p.type === 'day')?.value;
+  const mm = parts.find(p => p.type === 'month')?.value;
+  const yy = parts.find(p => p.type === 'year')?.value;
   const dateStr = `${yy}${mm}${dd}`;
   
   // Use a date-specific counter for daily sequencing
@@ -103,9 +107,13 @@ export async function generateInvoiceCodeInTx(
   transaction: FirebaseFirestore.Transaction,
   date: Date
 ): Promise<string> {
-  const yy = date.getFullYear().toString().slice(-2);
-  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-  const dd = date.getDate().toString().padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    year: '2-digit', month: '2-digit', day: '2-digit', timeZone: 'Asia/Ho_Chi_Minh'
+  });
+  const parts = formatter.formatToParts(date);
+  const dd = parts.find(p => p.type === 'day')?.value;
+  const mm = parts.find(p => p.type === 'month')?.value;
+  const yy = parts.find(p => p.type === 'year')?.value;
   const dateStr = `${yy}${mm}${dd}`;
   
   const counterName = `invoice_${dateStr}`;

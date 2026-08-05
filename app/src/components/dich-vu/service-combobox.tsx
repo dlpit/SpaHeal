@@ -120,7 +120,7 @@ export function ServiceCombobox({
                   <CommandItem
                     value="__none__"
                     onSelect={() => {
-                      onValueChange('__none__');
+                      onValueChange('');
                       setOpen(false);
                     }}
                   >
@@ -128,7 +128,7 @@ export function ServiceCombobox({
                     <Check
                       className={cn(
                         "ml-auto size-4",
-                        !value || value === '__none__' ? "opacity-100" : "opacity-0"
+                        !value || value === '' ? "opacity-100" : "opacity-0"
                       )}
                     />
                   </CommandItem>

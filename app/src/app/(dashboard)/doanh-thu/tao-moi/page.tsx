@@ -1,4 +1,5 @@
 import { getInvoiceFormOptions } from "@/app/actions/invoice";
+import { getFrequentCustomers } from "@/app/actions/customer";
 import { InvoiceForm } from "@/components/invoices/invoice-form";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -11,7 +12,10 @@ export const metadata = {
 };
 
 export default async function CreateInvoicePage() {
-  const optionsResult = await getInvoiceFormOptions();
+  const [optionsResult, customersResult] = await Promise.all([
+    getInvoiceFormOptions(),
+    getFrequentCustomers(20)
+  ]);
 
   if (!optionsResult.success || !optionsResult.data) {
     return (
@@ -43,7 +47,10 @@ export default async function CreateInvoicePage() {
       </div>
 
       {/* Form Content */}
-      <InvoiceForm options={optionsResult.data} />
+      <InvoiceForm 
+        options={optionsResult.data} 
+        initialCustomers={customersResult}
+      />
     </div>
   );
 }

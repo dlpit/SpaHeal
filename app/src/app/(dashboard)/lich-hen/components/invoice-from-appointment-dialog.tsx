@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { format } from 'date-fns';
+import { vi } from 'date-fns/locale';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +19,7 @@ import { getInvoiceFormOptions } from '@/app/actions/invoice';
 import { createInvoice } from '@/app/actions/invoice';
 import { InvoiceFormValues } from '@/lib/schemas/invoice';
 import { InvoiceForm } from '@/components/invoices/invoice-form';
+import { ClientCustomerDoc } from '@/lib/firestore-types';
 
 interface InvoiceFromAppointmentDialogProps {
   isOpen: boolean;
@@ -106,58 +109,63 @@ export function InvoiceFromAppointmentDialog({
     servicesDisplay = appointment.serviceName;
   }
 
+  const initialServices = appointment.services && appointment.services.length > 0
+    ? appointment.services.map((s) => ({ id: s.serviceId, name: s.serviceName, price: s.price || 0, code: '' }))
+    : appointment.serviceId
+    ? [{ id: appointment.serviceId, name: appointment.serviceName || '', price: 0, code: '' }]
+    : [];
+
+  const initialCustomers = [
+    { 
+      id: appointment.customerId, 
+      fullName: appointment.customerName || 'Khách hàng', 
+      phone: null,
+      totalSpent: 0,
+      visitCount: 0,
+      loyaltyTier: 'BRONZE' as const,
+      createdAt: { seconds: 0, nanoseconds: 0 } as any
+    } as unknown as ClientCustomerDoc
+  ];
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(false); }}>
-      <DialogContent className="sm:max-w-[90vw] lg:max-w-[1100px] max-h-[95vh] overflow-y-auto bg-background">
-        <DialogHeader className="bg-background px-6 py-4 border-b -mx-4 -mt-4 mb-2 rounded-t-xl sticky top-[-16px] z-50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[var(--spa-blush-100)] rounded-lg">
-              <FilePlus className="w-5 h-5 text-[var(--spa-blush-400)]" />
-            </div>
-            <div>
-              <DialogTitle className="text-lg font-semibold">
-                Tạo hóa đơn từ lịch hẹn
-              </DialogTitle>
-              <DialogDescription 
-                className="text-sm text-muted-foreground line-clamp-1"
-                title={fullServicesText ? `Khách hàng: ${appointment.customerName} · Dịch vụ: ${fullServicesText}` : undefined}
-              >
-                Khách hàng: <strong>{appointment.customerName}</strong>
-                {servicesDisplay && (
-                  <> · Dịch vụ: <strong>{servicesDisplay}</strong></>
-                )}
-              </DialogDescription>
-            </div>
-          </div>
+      <DialogContent className="sm:max-w-4xl lg:max-w-5xl w-full max-h-[90vh] overflow-y-auto flex flex-col p-0 gap-0">
+        <DialogHeader className="p-6 pb-2 shrink-0">
+          <DialogTitle>Tạo Hóa Đơn</DialogTitle>
+          <DialogDescription className="mt-2 text-sm text-muted-foreground flex flex-col gap-1">
+            <span>Từ lịch hẹn: <strong>{format(new Date(appointment.date), "dd/MM/yyyy HH:mm", { locale: vi })}</strong></span>
+            <span>Khách hàng: <strong>{appointment.customerName}</strong></span>
+            <span>Dịch vụ: <strong>{servicesDisplay || "Chưa chọn dịch vụ"}</strong></span>
+          </DialogDescription>
         </DialogHeader>
 
-        {isLoading && (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            <span className="ml-3 text-muted-foreground">Đang tải dữ liệu...</span>
-          </div>
-        )}
-
-        {fetchError && (
-          <div className="flex items-center gap-3 p-4 bg-red-50 text-red-600 rounded-lg border border-red-200">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <p className="text-sm">{fetchError}</p>
-          </div>
-        )}
-
-        {options && !isLoading && (
-          <InvoiceForm
-            options={options}
-            prefillValues={prefillValues}
-            onSuccessRedirect={false}
-            isDialog={true}
-            onCancel={() => onClose(false)}
-            onSuccess={() => {
-              onClose(true);
-              router.refresh();
-            }}
-          />
-        )}
+        <div className="flex-1 p-6 pt-2 bg-muted/10 relative">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">Đang tải dữ liệu biểu mẫu...</p>
+            </div>
+          ) : fetchError ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <p className="text-red-500 mb-4">{fetchError}</p>
+              <Button variant="outline" onClick={() => onClose(false)}>Đóng</Button>
+            </div>
+          ) : options ? (
+            <InvoiceForm 
+              options={options} 
+              prefillValues={prefillValues}
+              initialCustomers={initialCustomers}
+              initialServices={initialServices}
+              isDialog={true}
+              onSuccess={() => {
+                onClose(true);
+                router.refresh();
+              }}
+              onCancel={() => onClose(false)}
+              onSuccessRedirect={false}
+            />
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

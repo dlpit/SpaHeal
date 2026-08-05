@@ -94,6 +94,47 @@ export async function updateCustomer(id: string, data: CustomerFormValues) {
   }
 }
 
+export async function getCustomer(id: string): Promise<ClientCustomerDoc | null> {
+  try {
+    const doc = await db.collection(COLLECTIONS.CUSTOMERS).doc(id).get();
+    if (!doc.exists) return null;
+    return serializeDoc<CustomerDoc & Record<string, unknown>>(
+      doc.id,
+      doc.data() as CustomerDoc & Record<string, unknown>
+    ) as unknown as ClientCustomerDoc;
+  } catch (error) {
+    console.error('Error getting customer:', error);
+    return null;
+  }
+}
+
+export async function getFrequentCustomers(limit: number = 20): Promise<ClientCustomerDoc[]> {
+  try {
+    const snapshot = await db.collection(COLLECTIONS.CUSTOMERS)
+      .where('isActive', '==', true)
+      .get();
+      
+    const customers = snapshot.docs
+      .map(doc =>
+        serializeDoc<CustomerDoc & Record<string, unknown>>(
+          doc.id,
+          doc.data() as CustomerDoc & Record<string, unknown>
+        ) as unknown as ClientCustomerDoc
+      )
+      .sort((a, b) => {
+        const visitDiff = (b.visitCount || 0) - (a.visitCount || 0);
+        if (visitDiff !== 0) return visitDiff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
+      .slice(0, limit);
+    
+    return customers;
+  } catch (error) {
+    console.error('Error getting frequent customers:', error);
+    throw new Error('Không thể tải danh sách khách hàng thân thiết');
+  }
+}
+
 export async function searchCustomers(query: string = ''): Promise<ClientCustomerDoc[]> {
   try {
     const q = query.trim().toLowerCase();
@@ -118,9 +159,13 @@ export async function searchCustomers(query: string = ''): Promise<ClientCustome
       );
     }
     
-    // Sắp xếp mới nhất và giới hạn 20 kết quả để UI Combobox mượt mà
+    // Sắp xếp theo số lần ghé thăm giảm dần, sau đó là ngày tạo giảm dần
     return customers
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => {
+        const visitDiff = (b.visitCount || 0) - (a.visitCount || 0);
+        if (visitDiff !== 0) return visitDiff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
       .slice(0, 20);
       
   } catch (error) {

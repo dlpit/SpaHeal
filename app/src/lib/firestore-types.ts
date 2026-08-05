@@ -124,6 +124,12 @@ export interface AppointmentServiceEmbed {
   price: number;
 }
 
+export interface StatusHistoryLog {
+  status: AppointmentStatus;
+  timestamp: Timestamp;
+  updatedBy?: string | null;
+}
+
 export interface AppointmentDoc {
   customerId: string;
   customerName: string; // Denormalized
@@ -145,6 +151,7 @@ export interface AppointmentDoc {
   startTime: string;
   endTime: string | null;
   status: AppointmentStatus;
+  statusHistory?: StatusHistoryLog[];
   notes: string | null;
   deposit: number | null;
   cancelReason?: string | null;

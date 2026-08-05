@@ -23,9 +23,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 
+import { CustomerCombobox } from "@/components/khach-hang/customer-combobox";
+import { ServiceCombobox } from "@/components/dich-vu/service-combobox";
+import type { ClientCustomerDoc } from "@/lib/firestore-types";
+
 interface FormOptions {
-  customers: { id: string; fullName: string; phone: string | null }[];
-  services: { id: string; code: string; name: string; price: number; categoryId: string | null }[];
   staff: { id: string; fullName: string; code: string }[];
   paymentMethods: { id: string; name: string; code: string }[];
   paymentAccounts: { id: string; bankName: string; code: string }[];
@@ -35,6 +37,10 @@ interface InvoiceFormProps {
   options: FormOptions;
   /** Giá trị pre-fill từ lịch hẹn — dùng khi tạo hóa đơn từ InvoiceFromAppointmentDialog */
   prefillValues?: Partial<InvoiceFormValues>;
+  /** Dữ liệu khách hàng ban đầu để hiển thị combobox mượt mà */
+  initialCustomers?: ClientCustomerDoc[];
+  /** Dữ liệu dịch vụ ban đầu để hiển thị combobox mượt mà (đặc biệt khi sửa/từ lịch hẹn) */
+  initialServices?: { id: string; name: string; price: number; code: string }[];
   /** Lựa chọn có chuyển hướng sau khi thành công không */
   onSuccessRedirect?: boolean;
   /** Callback tùy chọn sau khi tạo hóa đơn thành công */
@@ -48,6 +54,8 @@ interface InvoiceFormProps {
 export function InvoiceForm({
   options,
   prefillValues,
+  initialCustomers = [],
+  initialServices = [],
   onSuccessRedirect = true,
   onSuccess,
   isDialog = false,
@@ -76,17 +84,9 @@ export function InvoiceForm({
     }
   });
 
-  // Nếu có prefillValues.items với serviceId → auto-fill unitPrice từ options
-  useEffect(() => {
-    if (prefillValues?.items?.length && options.services.length) {
-      prefillValues.items.forEach((item, idx) => {
-        if (item.serviceId && item.unitPrice === 0) {
-          const svc = options.services.find(s => s.id === item.serviceId);
-          if (svc) form.setValue(`items.${idx}.unitPrice`, svc.price);
-        }
-      });
-    }
-  }, [options.services, prefillValues, form]);
+  // Loại bỏ đoạn code autofill unitPrice từ options.services ở đây, vì ServiceCombobox sẽ đảm nhận việc onServiceSelected.
+  // Tuy nhiên, đối với prefillValues, unitPrice đã được lấy từ appointment nên không cần auto-fill nữa.
+
 
   const { fields, append, remove } = useFieldArray({
     name: "items",
@@ -98,8 +98,6 @@ export function InvoiceForm({
   const discount = form.watch("discount") || 0;
   const surcharge = form.watch("surcharge") || 0;
 
-  const customerMap = useMemo(() => new Map(options.customers.map(c => [c.id, c])), [options.customers]);
-  const serviceMap = useMemo(() => new Map(options.services.map(s => [s.id, s])), [options.services]);
   const staffMap = useMemo(() => new Map(options.staff.map(s => [s.id, s])), [options.staff]);
   const paymentMethodMap = useMemo(() => new Map(options.paymentMethods.map(m => [m.id, m])), [options.paymentMethods]);
   const paymentAccountMap = useMemo(() => new Map(options.paymentAccounts.map(a => [a.id, a])), [options.paymentAccounts]);
@@ -180,27 +178,12 @@ export function InvoiceForm({
               {/* Customer */}
               <div className="space-y-2">
                 <Label>Khách hàng <span className="text-red-500">*</span></Label>
-                <Select onValueChange={(val) => form.setValue("customerId", val || "")} value={form.watch("customerId")}>
-                  <SelectTrigger className={cn("w-full", form.formState.errors.customerId && "border-red-500")}>
-                    <SelectValue placeholder="Chọn khách hàng">
-                      {(val: string | null) => {
-                        const c = customerMap.get(val || "");
-                        return c ? `${c.fullName}${c.phone ? ` - ${c.phone}` : ""}` : null;
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.customers.map((c) => (
-                      <SelectItem 
-                        key={c.id} 
-                        value={c.id}
-                        label={`${c.fullName}${c.phone ? ` - ${c.phone}` : ""}`}
-                      >
-                        {c.fullName} {c.phone && `- ${c.phone}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CustomerCombobox
+                  value={form.watch("customerId")}
+                  onValueChange={(val) => form.setValue("customerId", val)}
+                  initialCustomers={initialCustomers}
+                  error={!!form.formState.errors.customerId}
+                />
                 {form.formState.errors.customerId && (
                   <p className="text-xs text-red-500">{form.formState.errors.customerId.message}</p>
                 )}
@@ -328,33 +311,17 @@ export function InvoiceForm({
                       {/* Service Select */}
                       <div className="col-span-12 sm:col-span-6 space-y-1">
                         <Label className="text-xs text-muted-foreground">Tên dịch vụ <span className="text-red-500">*</span></Label>
-                        <Select 
+                        <ServiceCombobox
                           value={form.watch(`items.${index}.serviceId`)}
-                          onValueChange={(val) => {
-                            form.setValue(`items.${index}.serviceId`, val || "");
-                            // Auto fill price
-                            const service = serviceMap.get(val || "");
+                          onValueChange={(val) => form.setValue(`items.${index}.serviceId`, val)}
+                          onServiceSelected={(service) => {
                             if (service) {
                               form.setValue(`items.${index}.unitPrice`, service.price);
                             }
                           }}
-                        >
-                          <SelectTrigger className={cn("w-full", error?.serviceId && "border-red-500")}>
-                            <SelectValue placeholder="Chọn dịch vụ">
-                              {(val: string | null) => {
-                                const svc = serviceMap.get(val || "");
-                                return svc ? svc.name : null;
-                              }}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {options.services.map((s) => (
-                              <SelectItem key={s.id} value={s.id} label={s.name}>
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          initialServices={initialServices}
+                          error={!!error?.serviceId}
+                        />
                       </div>
 
                       {/* Quantity */}
@@ -458,7 +425,7 @@ export function InvoiceForm({
         className={cn(
           "p-4 bg-background/95 backdrop-blur-xl border-t z-50 flex justify-end px-6 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]",
           isDialog 
-            ? "sticky bottom-[-16px] -mx-4 -mb-4 mt-6 rounded-b-xl" // Inside dialog: match p-4 padding of DialogContent
+            ? "sticky bottom-[-24px] -mx-6 -mb-6 mt-6 rounded-b-xl" // Inside dialog: match p-6 padding of container
             : "fixed bottom-0 left-0 right-0 md:left-64" // Full page
         )}
       >

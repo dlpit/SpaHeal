@@ -1,18 +1,24 @@
 'use server';
 
 import { db } from '@/lib/firebase';
-import { COLLECTIONS, AppointmentDoc, AppointmentStatus, StaffDoc, ServiceDoc } from '@/lib/firestore-types';
+import { COLLECTIONS, AppointmentDoc, AppointmentStatus, StaffDoc, ServiceDoc, StatusHistoryLog } from '@/lib/firestore-types';
 import { serializeDoc, serverTimestamp, toTimestamp, generateInvoiceCodeInTx } from '@/lib/firestore-helpers';
 import { AppointmentFormValues } from '@/lib/schemas/appointment';
 import { revalidatePath } from 'next/cache';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { INITIAL_APPOINTMENT_STATUSES, APPOINTMENT_TRANSITIONS } from '@/lib/constants/appointment';
+
+export type ClientStatusHistoryLog = Omit<StatusHistoryLog, 'timestamp'> & {
+  timestamp: string;
+};
 
 // Create a Client type for returning to the frontend
-export type ClientAppointmentDoc = Omit<AppointmentDoc, 'createdAt' | 'updatedAt' | 'date'> & {
+export type ClientAppointmentDoc = Omit<AppointmentDoc, 'createdAt' | 'updatedAt' | 'date' | 'statusHistory'> & {
   id: string;
   createdAt: string;
   updatedAt: string;
   date: string;
+  statusHistory?: ClientStatusHistoryLog[];
 };
 
 /**
@@ -38,6 +44,10 @@ export async function getAppointments(): Promise<ClientAppointmentDoc[]> {
         date: data.date?.toDate().toISOString(),
         createdAt: data.createdAt?.toDate().toISOString(),
         updatedAt: data.updatedAt?.toDate().toISOString(),
+        statusHistory: data.statusHistory?.map(log => ({
+          ...log,
+          timestamp: log.timestamp?.toDate().toISOString(),
+        })),
       } as ClientAppointmentDoc;
     });
     
@@ -61,7 +71,15 @@ export async function createAppointment(data: AppointmentFormValues) {
       date: toTimestamp(data.date),
       startTime: data.startTime,
       endTime: data.endTime || null,
-      status: data.status as AppointmentStatus,
+      status: INITIAL_APPOINTMENT_STATUSES.includes(data.status as AppointmentStatus) 
+        ? (data.status as AppointmentStatus) 
+        : 'CONFIRMED',
+      statusHistory: [{
+        status: INITIAL_APPOINTMENT_STATUSES.includes(data.status as AppointmentStatus) 
+          ? (data.status as AppointmentStatus) 
+          : 'CONFIRMED',
+        timestamp: Timestamp.now() as any,
+      }],
       notes: data.notes || null,
       deposit: data.deposit || null,
       createdAt: serverTimestamp() as any,
@@ -72,9 +90,9 @@ export async function createAppointment(data: AppointmentFormValues) {
     
     revalidatePath('/lich-hen');
     return { success: true, id: docRef.id };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating appointment:', error);
-    throw new Error('Không thể tạo lịch hẹn');
+    throw new Error('Không thể tạo lịch hẹn: ' + error.message);
   }
 }
 
@@ -101,13 +119,9 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
       return { success: true };
     }
 
-    // Ngăn chặn đổi trạng thái sang COMPLETED/CANCELLED qua form edit thông thường
-    if (data.status === 'COMPLETED' && oldData.status !== 'COMPLETED') {
-      throw new Error('Vui lòng sử dụng nút "Hoàn thành" trong chi tiết lịch hẹn.');
-    }
-    if (data.status === 'CANCELLED' && oldData.status !== 'CANCELLED') {
-      throw new Error('Vui lòng sử dụng chức năng "Hủy lịch" chuyên dụng.');
-    }
+    // Không cho phép cập nhật trạng thái qua form thông thường
+    // Trạng thái chỉ được cập nhật qua updateAppointmentStatus
+    // (UI sẽ disabled dropdown status khi edit)
 
     const updateData: Partial<AppointmentDoc> = {
       customerId: data.customerId,
@@ -120,7 +134,7 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
       date: toTimestamp(data.date),
       startTime: data.startTime,
       endTime: data.endTime || null,
-      status: data.status as AppointmentStatus,
+      // Bỏ status khỏi bản cập nhật chung
       notes: data.notes || null,
       deposit: data.deposit || null,
       updatedAt: serverTimestamp() as any,
@@ -158,10 +172,28 @@ export async function updateAppointmentTime(id: string, newDate: Date, newStartT
 /**
  * Chuyển trạng thái lịch hẹn — dùng khi lễ tân thay đổi bước quy trình
  */
-export async function updateAppointmentStatus(id: string, status: AppointmentStatus) {
+export async function updateAppointmentStatus(id: string, status: AppointmentStatus, forceBypass: boolean = false) {
   try {
-    await db.collection(COLLECTIONS.APPOINTMENTS).doc(id).update({
+    const docRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(id);
+    const docSnap = await docRef.get();
+    
+    if (!docSnap.exists) {
+      throw new Error('Lịch hẹn không tồn tại');
+    }
+    
+    const oldData = docSnap.data() as AppointmentDoc;
+    const allowedTransitions = APPOINTMENT_TRANSITIONS[oldData.status] || [];
+    
+    if (!forceBypass && !allowedTransitions.includes(status) && status !== oldData.status) {
+      throw new Error(`Không thể chuyển trạng thái từ ${oldData.status} sang ${status}`);
+    }
+
+    await docRef.update({
       status,
+      statusHistory: FieldValue.arrayUnion({
+        status,
+        timestamp: Timestamp.now(),
+      }),
       updatedAt: serverTimestamp(),
     });
     revalidatePath('/lich-hen');
@@ -354,7 +386,7 @@ export async function searchServices(query: string = '') {
       
     let services = snapshot.docs.map(doc => {
       const data = doc.data() as ServiceDoc;
-      return { id: doc.id, name: data.name, price: data.price, code: data.code };
+      return { id: doc.id, name: data.name, price: data.price, code: data.code, sortOrder: data.sortOrder || 999 };
     });
 
     if (q) {
@@ -364,8 +396,11 @@ export async function searchServices(query: string = '') {
       );
     }
     
-    // Sắp xếp in-memory theo tên và giới hạn 20 kết quả
-    return services.sort((a, b) => (a.name || '').localeCompare(b.name || '')).slice(0, 20);
+    // Sắp xếp in-memory theo sortOrder, sau đó tên và giới hạn 20 kết quả
+    return services.sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return (a.name || '').localeCompare(b.name || '');
+    }).slice(0, 20);
   } catch (error) {
     console.error('Error searching services:', error);
     throw new Error('Không thể tìm kiếm dịch vụ');

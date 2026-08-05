@@ -17,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { searchCustomers } from '@/app/actions/customer';
+import { searchCustomers, getCustomer } from '@/app/actions/customer';
 import { ClientCustomerDoc } from '@/lib/firestore-types';
 
 interface CustomerComboboxProps {
@@ -46,6 +46,33 @@ export function CustomerCombobox({
 
   const selectedCustomer = React.useMemo(() => {
     return customers.find((c) => c.id === value) || initialCustomers.find((c) => c.id === value);
+  }, [value, customers, initialCustomers]);
+
+  React.useEffect(() => {
+    if (!value) return;
+    const exists = customers.some((c) => c.id === value) || initialCustomers.some((c) => c.id === value);
+    if (exists) return;
+
+    let active = true;
+    const fetchSingleCustomer = async () => {
+      try {
+        const res = await getCustomer(value);
+        if (res && active) {
+          setCustomers((prev) => {
+            if (prev.some((c) => c.id === res.id)) return prev;
+            return [res, ...prev];
+          });
+        }
+      } catch (err) {
+        console.error('Lỗi khi tải thông tin khách hàng đã chọn:', err);
+      }
+    };
+
+    fetchSingleCustomer();
+
+    return () => {
+      active = false;
+    };
   }, [value, customers, initialCustomers]);
 
   React.useEffect(() => {
