@@ -19,7 +19,7 @@ import { getInvoiceFormOptions } from '@/app/actions/invoice';
 import { createInvoice } from '@/app/actions/invoice';
 import { InvoiceFormValues } from '@/lib/schemas/invoice';
 import { InvoiceForm } from '@/components/invoices/invoice-form';
-import { ClientCustomerDoc } from '@/lib/firestore-types';
+import { ClientCustomerDoc, PaymentType } from '@/lib/firestore-types';
 
 interface InvoiceFromAppointmentDialogProps {
   isOpen: boolean;
@@ -28,11 +28,9 @@ interface InvoiceFromAppointmentDialogProps {
 }
 
 type FormOptions = {
-  customers: { id: string; fullName: string; phone: string | null }[];
-  services: { id: string; code: string; name: string; price: number; categoryId: string | null }[];
   staff: { id: string; fullName: string; code: string }[];
-  paymentMethods: { id: string; name: string; code: string }[];
-  paymentAccounts: { id: string; bankName: string; code: string }[];
+  paymentMethods: { id: string; name: string; code: string; type?: PaymentType }[];
+  paymentAccounts: { id: string; bankName: string; code: string; type?: PaymentType }[];
 };
 
 /**
@@ -93,20 +91,27 @@ export function InvoiceFromAppointmentDialog({
       : {}),
   };
 
-  // Prepare service display text to avoid long wrapping lines
-  let servicesDisplay = null;
-  let fullServicesText = '';
-  if (appointment.services && appointment.services.length > 0) {
-    fullServicesText = appointment.services.map((s) => s.serviceName).join(', ');
-    if (appointment.services.length <= 2) {
-      servicesDisplay = fullServicesText;
+  const initialServicesList = appointment.services && appointment.services.length > 0
+    ? appointment.services.map((s) => ({ serviceId: s.serviceId, serviceName: s.serviceName }))
+    : appointment.serviceId && appointment.serviceName
+    ? [{ serviceId: appointment.serviceId, serviceName: appointment.serviceName }]
+    : [];
+
+  const [activeServices, setActiveServices] = useState<{ serviceId: string; serviceName: string }[]>(initialServicesList);
+
+  useEffect(() => {
+    setActiveServices(initialServicesList);
+  }, [appointment]);
+
+  // Compute service display text dynamically in real-time
+  let servicesDisplay = "Chưa chọn dịch vụ";
+  if (activeServices.length > 0) {
+    if (activeServices.length <= 2) {
+      servicesDisplay = activeServices.map((s) => s.serviceName).join(', ');
     } else {
-      const firstTwo = appointment.services.slice(0, 2).map((s) => s.serviceName).join(', ');
-      servicesDisplay = `${firstTwo} và ${appointment.services.length - 2} dịch vụ khác`;
+      const firstTwo = activeServices.slice(0, 2).map((s) => s.serviceName).join(', ');
+      servicesDisplay = `${firstTwo} và ${activeServices.length - 2} dịch vụ khác`;
     }
-  } else if (appointment.serviceName) {
-    fullServicesText = appointment.serviceName;
-    servicesDisplay = appointment.serviceName;
   }
 
   const initialServices = appointment.services && appointment.services.length > 0
@@ -135,7 +140,7 @@ export function InvoiceFromAppointmentDialog({
           <DialogDescription className="mt-2 text-sm text-muted-foreground flex flex-col gap-1">
             <span>Từ lịch hẹn: <strong>{format(new Date(appointment.date), "dd/MM/yyyy HH:mm", { locale: vi })}</strong></span>
             <span>Khách hàng: <strong>{appointment.customerName}</strong></span>
-            <span>Dịch vụ: <strong>{servicesDisplay || "Chưa chọn dịch vụ"}</strong></span>
+            <span>Dịch vụ: <strong>{servicesDisplay}</strong></span>
           </DialogDescription>
         </DialogHeader>
 
@@ -157,6 +162,7 @@ export function InvoiceFromAppointmentDialog({
               initialCustomers={initialCustomers}
               initialServices={initialServices}
               isDialog={true}
+              onServicesChange={setActiveServices}
               onSuccess={() => {
                 onClose(true);
                 router.refresh();

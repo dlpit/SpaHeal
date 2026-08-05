@@ -45,12 +45,16 @@ export function CustomerCombobox({
   const [customers, setCustomers] = React.useState<ClientCustomerDoc[]>(initialCustomers);
 
   const selectedCustomer = React.useMemo(() => {
-    return customers.find((c) => c.id === value) || initialCustomers.find((c) => c.id === value);
+    const foundInState = customers.find((c) => c.id === value);
+    if (foundInState && foundInState.phone) return foundInState;
+    const foundInInit = initialCustomers.find((c) => c.id === value);
+    return foundInState || foundInInit;
   }, [value, customers, initialCustomers]);
 
   React.useEffect(() => {
     if (!value) return;
-    const exists = customers.some((c) => c.id === value) || initialCustomers.some((c) => c.id === value);
+    const hasFullData = (c: ClientCustomerDoc) => c.id === value && !!c.phone;
+    const exists = customers.some(hasFullData) || initialCustomers.some(hasFullData);
     if (exists) return;
 
     let active = true;
@@ -59,7 +63,12 @@ export function CustomerCombobox({
         const res = await getCustomer(value);
         if (res && active) {
           setCustomers((prev) => {
-            if (prev.some((c) => c.id === res.id)) return prev;
+            const index = prev.findIndex((c) => c.id === res.id);
+            if (index >= 0) {
+              const updated = [...prev];
+              updated[index] = res;
+              return updated;
+            }
             return [res, ...prev];
           });
         }
@@ -83,7 +92,13 @@ export function CustomerCombobox({
       try {
         const results = await searchCustomers(query);
         if (active) {
-          setCustomers(results);
+          setCustomers((prev) => {
+            const currentSelected = prev.find((c) => c.id === value);
+            if (currentSelected && !results.some((c) => c.id === value)) {
+              return [currentSelected, ...results];
+            }
+            return results;
+          });
         }
       } catch (err) {
         console.error('Lỗi khi tải khách hàng', err);
@@ -100,7 +115,7 @@ export function CustomerCombobox({
       active = false;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, value]);
 
   return (
     <Popover open={open} onOpenChange={(isOpen) => {
@@ -118,7 +133,9 @@ export function CustomerCombobox({
       >
         <span className="truncate">
           {selectedCustomer
-            ? `${selectedCustomer.fullName} - ${selectedCustomer.phone}`
+            ? selectedCustomer.phone
+              ? `${selectedCustomer.fullName} - ${selectedCustomer.phone}`
+              : selectedCustomer.fullName
             : "Chọn khách hàng..."}
         </span>
         <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
@@ -171,7 +188,7 @@ export function CustomerCombobox({
                     >
                       <div className="flex flex-col">
                         <span>{customer.fullName}</span>
-                        <span className="text-xs text-muted-foreground">{customer.phone}</span>
+                        {customer.phone && <span className="text-xs text-muted-foreground">{customer.phone}</span>}
                       </div>
                       <Check
                         className={cn(

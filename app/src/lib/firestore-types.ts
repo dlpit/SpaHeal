@@ -60,9 +60,12 @@ export interface StaffDoc {
   updatedAt: Timestamp;
 }
 
+export type PaymentType = 'CASH' | 'BANK' | 'WALLET' | 'OTHER';
+
 export interface PaymentMethodDoc {
   code: string;
   name: string;
+  type?: PaymentType;
   isActive: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -73,6 +76,7 @@ export interface PaymentAccountDoc {
   bankName: string;
   accountNumber: string | null;
   accountName: string | null;
+  type?: PaymentType;
   isActive: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

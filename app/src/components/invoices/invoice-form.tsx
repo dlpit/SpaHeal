@@ -25,12 +25,12 @@ import { Separator } from "@/components/ui/separator";
 
 import { CustomerCombobox } from "@/components/khach-hang/customer-combobox";
 import { ServiceCombobox } from "@/components/dich-vu/service-combobox";
-import type { ClientCustomerDoc } from "@/lib/firestore-types";
+import type { ClientCustomerDoc, PaymentType } from "@/lib/firestore-types";
 
 interface FormOptions {
   staff: { id: string; fullName: string; code: string }[];
-  paymentMethods: { id: string; name: string; code: string }[];
-  paymentAccounts: { id: string; bankName: string; code: string }[];
+  paymentMethods: { id: string; name: string; code: string; type?: PaymentType }[];
+  paymentAccounts: { id: string; bankName: string; code: string; type?: PaymentType }[];
 }
 
 interface InvoiceFormProps {
@@ -45,6 +45,8 @@ interface InvoiceFormProps {
   onSuccessRedirect?: boolean;
   /** Callback tùy chọn sau khi tạo hóa đơn thành công */
   onSuccess?: () => void;
+  /** Callback khi danh sách dịch vụ được chọn thay đổi */
+  onServicesChange?: (services: { serviceId: string; serviceName: string }[]) => void;
   /** Trạng thái hiển thị trong Dialog (tránh lỗi sticky footer) */
   isDialog?: boolean;
   /** Callback khi nhấn Hủy */
@@ -58,6 +60,7 @@ export function InvoiceForm({
   initialServices = [],
   onSuccessRedirect = true,
   onSuccess,
+  onServicesChange,
   isDialog = false,
   onCancel,
 }: InvoiceFormProps) {
@@ -65,6 +68,10 @@ export function InvoiceForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  const defaultCashMethod = useMemo(() => {
+    return options.paymentMethods.find(m => m.code === 'TM' || m.type === 'CASH') || options.paymentMethods[0];
+  }, [options.paymentMethods]);
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
@@ -75,7 +82,7 @@ export function InvoiceForm({
       items: [{ serviceId: "", quantity: 1, unitPrice: 0 }],
       customerId: "",
       staffId: "",
-      paymentMethodId: "",
+      paymentMethodId: defaultCashMethod?.id || "",
       paymentAccountId: "",
       notes: "",
       appointmentId: null,
@@ -84,9 +91,65 @@ export function InvoiceForm({
     }
   });
 
-  // Loại bỏ đoạn code autofill unitPrice từ options.services ở đây, vì ServiceCombobox sẽ đảm nhận việc onServiceSelected.
-  // Tuy nhiên, đối với prefillValues, unitPrice đã được lấy từ appointment nên không cần auto-fill nữa.
+  const selectedPaymentMethodId = form.watch("paymentMethodId");
 
+  const selectedMethod = useMemo(() => {
+    return options.paymentMethods.find(m => m.id === selectedPaymentMethodId);
+  }, [options.paymentMethods, selectedPaymentMethodId]);
+
+  const isCash = !selectedMethod || selectedMethod.type === 'CASH' || selectedMethod.code === 'TM';
+
+  useEffect(() => {
+    if (selectedMethod) {
+      form.setValue("paymentMethodType", selectedMethod.type || "OTHER");
+    } else {
+      form.setValue("paymentMethodType", "CASH");
+    }
+  }, [selectedMethod, form]);
+
+  useEffect(() => {
+    if (!form.getValues("paymentMethodId") && defaultCashMethod?.id) {
+      form.setValue("paymentMethodId", defaultCashMethod.id);
+    }
+  }, [defaultCashMethod, form]);
+
+  useEffect(() => {
+    if (isCash) {
+      form.setValue("paymentAccountId", undefined);
+    }
+  }, [isCash, form]);
+
+  const filteredAccounts = useMemo(() => {
+    if (isCash) return [];
+    if (!selectedMethod?.type) return options.paymentAccounts;
+    
+    const matching = options.paymentAccounts.filter(a => a.type === selectedMethod.type);
+    return matching.length > 0 ? matching : options.paymentAccounts;
+  }, [isCash, selectedMethod, options.paymentAccounts]);
+
+  const [serviceNameMap, setServiceNameMap] = useState<Record<string, string>>(() => {
+    const initialMap: Record<string, string> = {};
+    initialServices.forEach(s => {
+      if (s.id) initialMap[s.id] = s.name;
+    });
+    return initialMap;
+  });
+
+  useEffect(() => {
+    if (initialServices && initialServices.length > 0) {
+      setServiceNameMap(prev => {
+        let changed = false;
+        const next = { ...prev };
+        initialServices.forEach(s => {
+          if (s.id && !next[s.id]) {
+            next[s.id] = s.name;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [initialServices]);
 
   const { fields, append, remove } = useFieldArray({
     name: "items",
@@ -95,6 +158,18 @@ export function InvoiceForm({
 
   // Watch values for calculation
   const items = form.watch("items");
+
+  useEffect(() => {
+    if (!onServicesChange) return;
+    const selectedServices: { serviceId: string; serviceName: string }[] = [];
+    (items || []).forEach(item => {
+      if (item.serviceId) {
+        const name = serviceNameMap[item.serviceId] || initialServices.find(s => s.id === item.serviceId)?.name || 'Dịch vụ';
+        selectedServices.push({ serviceId: item.serviceId, serviceName: name });
+      }
+    });
+    onServicesChange(selectedServices);
+  }, [items, serviceNameMap, initialServices, onServicesChange]);
   const discount = form.watch("discount") || 0;
   const surcharge = form.watch("surcharge") || 0;
 
@@ -224,10 +299,16 @@ export function InvoiceForm({
 
               {/* Payment Info */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Hình thức T.Toán</Label>
-                  <Select onValueChange={(val) => form.setValue("paymentMethodId", val || undefined)} value={form.watch("paymentMethodId") || ""}>
-                    <SelectTrigger className="w-full">
+                <div className="space-y-2 min-w-0">
+                  <Label className="text-xs sm:text-sm font-medium truncate flex items-center h-5 gap-1" title="Hình thức thanh toán">
+                    <span className="truncate">Hình thức T.Toán</span>
+                    <span className="text-red-500 shrink-0">*</span>
+                  </Label>
+                  <Select 
+                    onValueChange={(val) => form.setValue("paymentMethodId", val || "")} 
+                    value={form.watch("paymentMethodId") || ""}
+                  >
+                    <SelectTrigger className={cn("w-full", form.formState.errors.paymentMethodId && "border-red-500")}>
                       <SelectValue placeholder="Chọn PTTT">
                         {(val: string | null) => {
                           const m = paymentMethodMap.get(val || "");
@@ -241,24 +322,38 @@ export function InvoiceForm({
                       ))}
                     </SelectContent>
                   </Select>
+                  {form.formState.errors.paymentMethodId && (
+                    <p className="text-xs text-red-500">{form.formState.errors.paymentMethodId.message}</p>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label>Tài khoản nhận</Label>
-                  <Select onValueChange={(val) => form.setValue("paymentAccountId", val || undefined)} value={form.watch("paymentAccountId") || ""}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Chọn TK">
+                <div className="space-y-2 min-w-0">
+                  <Label className="text-xs sm:text-sm font-medium truncate flex items-center h-5 gap-1" title="Tài khoản nhận">
+                    <span className="truncate">Tài khoản nhận</span>
+                    {!isCash && <span className="text-red-500 shrink-0">*</span>}
+                  </Label>
+                  <Select 
+                    disabled={isCash}
+                    onValueChange={(val) => form.setValue("paymentAccountId", val || undefined)} 
+                    value={form.watch("paymentAccountId") || ""}
+                  >
+                    <SelectTrigger className={cn("w-full", form.formState.errors.paymentAccountId && "border-red-500")}>
+                      <SelectValue placeholder={isCash ? "Không cần" : "Chọn TK"}>
                         {(val: string | null) => {
+                          if (isCash) return "Không cần";
                           const a = paymentAccountMap.get(val || "");
                           return a ? a.bankName : null;
                         }}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {options.paymentAccounts.map((a) => (
+                      {filteredAccounts.map((a) => (
                         <SelectItem key={a.id} value={a.id} label={a.bankName}>{a.bankName}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {form.formState.errors.paymentAccountId && (
+                    <p className="text-xs text-red-500">{form.formState.errors.paymentAccountId.message}</p>
+                  )}
                 </div>
               </div>
 
@@ -317,6 +412,7 @@ export function InvoiceForm({
                           onServiceSelected={(service) => {
                             if (service) {
                               form.setValue(`items.${index}.unitPrice`, service.price);
+                              setServiceNameMap(prev => ({ ...prev, [service.id]: service.name }));
                             }
                           }}
                           initialServices={initialServices}

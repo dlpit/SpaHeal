@@ -3,15 +3,95 @@
 import { z } from "zod";
 import { db } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-types";
-import type { ServiceDoc, StaffDoc, PaymentMethodDoc, PaymentAccountDoc, CustomerDoc, InvoiceDoc, InvoiceItemEmbed } from "@/lib/firestore-types";
+import type { ServiceDoc, StaffDoc, PaymentMethodDoc, PaymentAccountDoc, CustomerDoc, InvoiceDoc, InvoiceItemEmbed, PaymentType } from "@/lib/firestore-types";
 import { calculateLoyaltyTier, calculateRewardPoints } from "@/lib/firestore-types";
 import { invoiceFormSchema, InvoiceFormValues, refundInvoiceSchema, RefundInvoiceValues } from "@/lib/schemas/invoice";
 import { generateInvoiceCode, generateInvoiceCodeInTx, serverTimestamp, toTimestamp, serializeDoc } from "@/lib/firestore-helpers";
 import { revalidatePath } from "next/cache";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
+function inferPaymentType(code: string, explicitType?: PaymentType): PaymentType {
+  if (explicitType && ['CASH', 'BANK', 'WALLET', 'OTHER'].includes(explicitType)) {
+    return explicitType;
+  }
+  const upper = (code || '').toUpperCase();
+  if (upper === 'TM' || upper === 'CASH') return 'CASH';
+  if (upper === 'CK' || upper === 'QR' || upper === 'VCB' || upper === 'MB' || upper === 'BANK') return 'BANK';
+  if (upper === 'WALLET' || upper === 'MOMO' || upper === 'ZALOPAY' || upper === 'SHOPEEPAY') return 'WALLET';
+  return 'OTHER';
+}
+
+async function ensureDefaultPaymentOptions() {
+  const defaultMethods = [
+    { code: 'TM', name: 'Tiền mặt', type: 'CASH' as const },
+    { code: 'CK', name: 'Chuyển khoản', type: 'BANK' as const },
+    { code: 'WALLET', name: 'Ví điện tử', type: 'WALLET' as const },
+    { code: 'OTHER', name: 'Khác', type: 'OTHER' as const },
+  ];
+
+  const defaultAccounts = [
+    { code: 'VCB', bankName: 'VIETCOMBANK', type: 'BANK' as const },
+    { code: 'MB', bankName: 'MB BANK', type: 'BANK' as const },
+    { code: 'MOMO', bankName: 'MoMo', type: 'WALLET' as const },
+    { code: 'ZALOPAY', bankName: 'ZaloPay', type: 'WALLET' as const },
+    { code: 'SHOPEEPAY', bankName: 'ShopeePay', type: 'WALLET' as const },
+    { code: 'OTHER', bankName: 'Tài khoản khác', type: 'OTHER' as const },
+  ];
+
+  try {
+    const methodsSnap = await db.collection(COLLECTIONS.PAYMENT_METHODS).get();
+    const existingMethodCodes = new Set(methodsSnap.docs.map(d => (d.data() as PaymentMethodDoc).code));
+    
+    const batch = db.batch();
+    let hasChanges = false;
+
+    for (const pm of defaultMethods) {
+      if (!existingMethodCodes.has(pm.code)) {
+        const ref = db.collection(COLLECTIONS.PAYMENT_METHODS).doc();
+        batch.set(ref, {
+          code: pm.code,
+          name: pm.name,
+          type: pm.type,
+          isActive: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        hasChanges = true;
+      }
+    }
+
+    const accountsSnap = await db.collection(COLLECTIONS.PAYMENT_ACCOUNTS).get();
+    const existingAccountCodes = new Set(accountsSnap.docs.map(d => (d.data() as PaymentAccountDoc).code));
+
+    for (const pa of defaultAccounts) {
+      if (!existingAccountCodes.has(pa.code)) {
+        const ref = db.collection(COLLECTIONS.PAYMENT_ACCOUNTS).doc();
+        batch.set(ref, {
+          code: pa.code,
+          bankName: pa.bankName,
+          accountNumber: null,
+          accountName: null,
+          type: pa.type,
+          isActive: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      await batch.commit();
+    }
+  } catch (err) {
+    console.error("Error ensuring default payment options:", err);
+  }
+}
+
 export async function getInvoiceFormOptions() {
   try {
+    await ensureDefaultPaymentOptions();
+
     const [
       staffSnap,
       paymentMethodsSnap,
@@ -35,12 +115,14 @@ export async function getInvoiceFormOptions() {
 
     const paymentMethods = paymentMethodsSnap.docs.map(doc => {
       const data = doc.data() as PaymentMethodDoc;
-      return { id: doc.id, name: data.name, code: data.code };
+      const type = inferPaymentType(data.code, data.type);
+      return { id: doc.id, name: data.name, code: data.code, type };
     });
 
     const paymentAccounts = paymentAccountsSnap.docs.map(doc => {
       const data = doc.data() as PaymentAccountDoc;
-      return { id: doc.id, bankName: data.bankName, code: data.code };
+      const type = inferPaymentType(data.code, data.type);
+      return { id: doc.id, bankName: data.bankName, code: data.code, type };
     });
 
     return {
@@ -139,6 +221,13 @@ export async function createInvoice(data: InvoiceFormValues) {
     const staffData = staffDoc?.exists ? (staffDoc.data() as StaffDoc) : null;
     const pmData = paymentMethodDoc?.exists ? (paymentMethodDoc.data() as PaymentMethodDoc) : null;
     const paData = paymentAccountDoc?.exists ? (paymentAccountDoc.data() as PaymentAccountDoc) : null;
+
+    if (pmData) {
+      const pmType = inferPaymentType(pmData.code, pmData.type);
+      if (pmType !== 'CASH' && !validData.paymentAccountId) {
+        return { success: false, error: "Vui lòng chọn tài khoản nhận cho hình thức thanh toán này." };
+      }
+    }
 
     // Chuẩn bị reference hóa đơn
     const invoiceDate = validData.date;
