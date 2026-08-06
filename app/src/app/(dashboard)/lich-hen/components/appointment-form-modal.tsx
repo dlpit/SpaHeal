@@ -66,7 +66,7 @@ export function AppointmentFormModal({
   const setIsCalendarOpen = isCalendarOpenState[1];
 
   const isEditing = !!appointment;
-  const isReadOnly = isEditing && (appointment?.status === 'COMPLETED' || appointment?.status === 'CANCELLED' || !!appointment?.invoiceId);
+  const isReadOnly = isEditing && (appointment?.status === 'COMPLETED' || appointment?.status === 'CANCELLED');
 
   const formatDateForInput = (d: Date | string) => {
     const dateObj = new Date(d);

@@ -350,77 +350,14 @@ export async function createInvoice(data: InvoiceFormValues) {
   }
 }
 
+import { refundInvoiceInTx } from "@/lib/invoice-helpers";
+
 export async function refundInvoice(data: RefundInvoiceValues & { cancelledBy?: string }) {
   try {
     const validData = refundInvoiceSchema.parse(data);
 
     await db.runTransaction(async (transaction) => {
-      const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc(validData.invoiceId);
-      const invoiceSnap = await transaction.get(invoiceRef);
-
-      if (!invoiceSnap.exists) {
-        throw new Error("Hóa đơn không tồn tại.");
-      }
-
-      const invoiceData = invoiceSnap.data() as InvoiceDoc;
-
-      if (invoiceData.status !== "COMPLETED") {
-        throw new Error("Chỉ có thể hoàn tiền hóa đơn đã hoàn thành.");
-      }
-
-      // Thực hiện tất cả các thao tác READ trước (Quy định của Firestore)
-      let customerSnap = null;
-      let customerRef = null;
-      
-      if (invoiceData.customerId) {
-        customerRef = db.collection(COLLECTIONS.CUSTOMERS).doc(invoiceData.customerId);
-        customerSnap = await transaction.get(customerRef);
-      }
-
-      // 1. Cập nhật hóa đơn (Bắt đầu các thao tác WRITE)
-      transaction.update(invoiceRef, {
-        status: "REFUNDED",
-        cancelReason: validData.cancelReason,
-        refundedAt: serverTimestamp(),
-        cancelledBy: data.cancelledBy || null,
-        updatedAt: serverTimestamp(),
-      });
-
-      // 2. Cập nhật điểm & doanh số khách hàng
-      if (customerRef && customerSnap && customerSnap.exists) {
-        const customerData = customerSnap.data() as CustomerDoc;
-        
-        const newTotalSpent = Math.max(0, (customerData.totalSpent || 0) - invoiceData.totalAmount);
-        const pointsToDeduct = calculateRewardPoints(invoiceData.totalAmount);
-        const newRewardPoints = Math.max(0, (customerData.rewardPoints || 0) - pointsToDeduct);
-        const newLoyaltyTier = calculateLoyaltyTier(newTotalSpent);
-        const newVisitCount = Math.max(0, (customerData.visitCount || 0) - 1);
-        
-        transaction.update(customerRef, {
-          totalSpent: newTotalSpent,
-          visitCount: newVisitCount,
-          rewardPoints: newRewardPoints,
-          loyaltyTier: newLoyaltyTier,
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      // 3. Tạo phiếu chi (Expense) để đối soát dòng tiền
-      const expenseRef = db.collection(COLLECTIONS.EXPENSES).doc();
-      // Chúng ta sử dụng ID 'REFUND' tạm thời cho category nếu không có bảng mã tĩnh, 
-      // hoặc bạn có thể query lấy ID của category 'Hoàn tiền' (trong phạm vi này ta lưu thẳng giá trị denormalized)
-      transaction.set(expenseRef, {
-        date: serverTimestamp(),
-        expenseCategoryId: "REFUND_CATEGORY", // Dummy ID hoặc ID thật của danh mục hoàn tiền
-        categoryName: "Hoàn tiền dịch vụ",
-        categoryGroup: "Hoàn tiền hóa đơn",
-        amount: invoiceData.totalAmount,
-        quantity: 1,
-        description: `Hoàn tiền cho hóa đơn ${invoiceData.invoiceCode}. Lý do: ${validData.cancelReason}`,
-        notes: `Thực hiện bởi: ${data.cancelledBy || 'System'}`,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await refundInvoiceInTx(transaction, validData.invoiceId, validData.cancelReason, data.cancelledBy || null, false);
     });
 
     revalidatePath('/doanh-thu');

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { ClientAppointmentDoc, updateAppointmentStatus } from '@/app/actions/appointment-actions';
+import { ClientAppointmentDoc, updateAppointmentStatus, reopenAppointmentAsClone } from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc, AppointmentStatus } from '@/lib/firestore-types';
 import { PageHeader } from '@/components/ui/page-header';
 import { CustomCalendarGrid } from './custom-calendar-grid';
@@ -95,6 +95,31 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       }
     } catch (err: any) {
       toast.error('Lỗi hệ thống khi cập nhật trạng thái');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    if (!selectedAppointment) return;
+    
+    setIsUpdatingStatus(true);
+    try {
+      const res = await reopenAppointmentAsClone(selectedAppointment.id);
+      if (res.success && res.newAppointment) {
+        toast.success('Đã mở lại lịch và hoàn tiền cọc thành công!');
+        
+        setIsDetailOpen(false);
+        // Wait briefly to avoid dialog stacking issues
+        setTimeout(() => {
+          setSelectedAppointment(res.newAppointment);
+          setIsFormOpen(true);
+        }, 300);
+      } else {
+        toast.error(res.error || 'Lỗi khi mở lại lịch hẹn');
+      }
+    } catch (err: any) {
+      toast.error('Lỗi hệ thống khi mở lại lịch hẹn');
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -467,7 +492,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                     <Button 
                       size="sm" 
                       className="w-full bg-indigo-500 hover:bg-indigo-600 text-white"
-                      onClick={() => handleStatusUpdate('CONFIRMED')}
+                      onClick={handleReopen}
                       disabled={isUpdatingStatus}
                     >
                       <RotateCcw className="w-4 h-4 mr-2" />

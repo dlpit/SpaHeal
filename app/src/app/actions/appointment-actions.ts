@@ -35,7 +35,7 @@ export async function getAppointments(): Promise<ClientAppointmentDoc[]> {
       .where('date', '>=', Timestamp.fromDate(sixtyDaysAgo))
       .orderBy('date', 'asc')
       .get();
-      
+
     const appointments = snapshot.docs.map(doc => {
       const data = doc.data() as AppointmentDoc;
       return {
@@ -50,7 +50,7 @@ export async function getAppointments(): Promise<ClientAppointmentDoc[]> {
         })),
       } as ClientAppointmentDoc;
     });
-    
+
     return appointments;
   } catch (error) {
     console.error('Error getting appointments:', error);
@@ -71,12 +71,12 @@ export async function createAppointment(data: AppointmentFormValues) {
       date: toTimestamp(data.date),
       startTime: data.startTime,
       endTime: data.endTime || null,
-      status: INITIAL_APPOINTMENT_STATUSES.includes(data.status as AppointmentStatus) 
-        ? (data.status as AppointmentStatus) 
+      status: INITIAL_APPOINTMENT_STATUSES.includes(data.status as AppointmentStatus)
+        ? (data.status as AppointmentStatus)
         : 'CONFIRMED',
       statusHistory: [{
-        status: INITIAL_APPOINTMENT_STATUSES.includes(data.status as AppointmentStatus) 
-          ? (data.status as AppointmentStatus) 
+        status: INITIAL_APPOINTMENT_STATUSES.includes(data.status as AppointmentStatus)
+          ? (data.status as AppointmentStatus)
           : 'CONFIRMED',
         timestamp: Timestamp.now() as any,
       }],
@@ -87,7 +87,7 @@ export async function createAppointment(data: AppointmentFormValues) {
     };
 
     const docRef = await db.collection(COLLECTIONS.APPOINTMENTS).add(appointmentData);
-    
+
     revalidatePath('/lich-hen');
     return { success: true, id: docRef.id };
   } catch (error: any) {
@@ -100,14 +100,14 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
   try {
     const docRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(id);
     const docSnap = await docRef.get();
-    
+
     if (!docSnap.exists) {
       throw new Error('Lịch hẹn không tồn tại');
     }
-    
+
     const oldData = docSnap.data() as AppointmentDoc;
-    
-    const isLocked = oldData.status === 'COMPLETED' || oldData.status === 'CANCELLED' || !!oldData.invoiceId;
+
+    const isLocked = oldData.status === 'COMPLETED' || oldData.status === 'CANCELLED';
 
     if (isLocked) {
       // Chỉ cho phép cập nhật ghi chú khi đã khóa
@@ -141,7 +141,7 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
     };
 
     await docRef.update(updateData);
-    
+
     revalidatePath('/lich-hen');
     return { success: true };
   } catch (error) {
@@ -160,7 +160,7 @@ export async function updateAppointmentTime(id: string, newDate: Date, newStartT
     };
 
     await db.collection(COLLECTIONS.APPOINTMENTS).doc(id).update(updateData);
-    
+
     revalidatePath('/lich-hen');
     return { success: true };
   } catch (error) {
@@ -176,27 +176,39 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
   try {
     const docRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(id);
     const docSnap = await docRef.get();
-    
+
     if (!docSnap.exists) {
       throw new Error('Lịch hẹn không tồn tại');
     }
-    
+
     const oldData = docSnap.data() as AppointmentDoc;
     const allowedTransitions = APPOINTMENT_TRANSITIONS[oldData.status] || [];
-    
+
     if (!forceBypass && !allowedTransitions.includes(status) && status !== oldData.status) {
       throw new Error(`Không thể chuyển trạng thái từ ${oldData.status} sang ${status}`);
     }
 
-    await docRef.update({
+    const updatePayload: Record<string, any> = {
       status,
       statusHistory: FieldValue.arrayUnion({
         status,
         timestamp: Timestamp.now(),
       }),
       updatedAt: serverTimestamp(),
-    });
+    };
+
+    // Khi Mở lại lịch (Re-open) từ CANCELLED/NO_SHOW sang CONFIRMED/DEPOSIT:
+    // Xóa các metadata hủy/hóa đơn phạt cũ trên appointment doc để lịch hoạt động bình thường như một lịch hẹn mới active.
+    if (['CANCELLED', 'NO_SHOW'].includes(oldData.status) && ['CONFIRMED', 'DEPOSIT'].includes(status)) {
+      updatePayload.invoiceId = FieldValue.delete();
+      updatePayload.cancelReason = FieldValue.delete();
+      updatePayload.depositResolution = FieldValue.delete();
+    }
+
+    await docRef.update(updatePayload);
     revalidatePath('/lich-hen');
+    revalidatePath('/doanh-thu');
+    revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Error updating appointment status:', error);
@@ -210,14 +222,14 @@ export async function cancelAppointment(
 ) {
   try {
     const docRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(id);
-    
+
     await db.runTransaction(async (transaction) => {
       const docSnap = await transaction.get(docRef);
-      
+
       if (!docSnap.exists) {
         throw new Error('Lịch hẹn không tồn tại');
       }
-      
+
       const appointmentData = docSnap.data() as AppointmentDoc;
 
       if (appointmentData.invoiceId) {
@@ -242,9 +254,9 @@ export async function cancelAppointment(
       if (data.depositResolution === 'CONFISCATED' && appointmentData.deposit && appointmentData.deposit > 0) {
         const dateNow = new Date();
         const invoiceCode = await generateInvoiceCodeInTx(transaction, dateNow);
-        
+
         const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc();
-        
+
         const newInvoice = {
           invoiceCode,
           appointmentId: id,
@@ -274,14 +286,14 @@ export async function cancelAppointment(
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };
-        
+
         transaction.set(invoiceRef, newInvoice);
         updateData.invoiceId = invoiceRef.id;
       }
 
       transaction.update(docRef, updateData);
     });
-    
+
     revalidatePath('/lich-hen');
     return { success: true };
   } catch (error: any) {
@@ -379,23 +391,23 @@ export async function getServicesForAppointment() {
 export async function searchServices(query: string = '') {
   try {
     const q = query.trim().toLowerCase();
-    
+
     const snapshot = await db.collection(COLLECTIONS.SERVICES)
       .where('isActive', '==', true)
       .get();
-      
+
     let services = snapshot.docs.map(doc => {
       const data = doc.data() as ServiceDoc;
       return { id: doc.id, name: data.name, price: data.price, code: data.code, sortOrder: data.sortOrder || 999 };
     });
 
     if (q) {
-      services = services.filter(s => 
-        (s.name || '').toLowerCase().includes(q) || 
+      services = services.filter(s =>
+        (s.name || '').toLowerCase().includes(q) ||
         (s.code || '').toLowerCase().includes(q)
       );
     }
-    
+
     // Sắp xếp in-memory theo sortOrder, sau đó tên và giới hạn 20 kết quả
     return services.sort((a, b) => {
       if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
@@ -404,5 +416,95 @@ export async function searchServices(query: string = '') {
   } catch (error) {
     console.error('Error searching services:', error);
     throw new Error('Không thể tìm kiếm dịch vụ');
+  }
+}
+
+import { refundInvoiceInTx } from '@/lib/invoice-helpers';
+
+/**
+ * Mở lại lịch (Reopen): Thực hiện Refund hóa đơn phạt cũ (nếu có) và Clone sang một Lịch B mới với trạng thái DEPOSIT
+ */
+export async function reopenAppointmentAsClone(oldId: string, cancelledBy?: string) {
+  try {
+    const oldDocRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(oldId);
+    let clonedAppointment: ClientAppointmentDoc | null = null;
+
+    await db.runTransaction(async (transaction) => {
+      const oldSnap = await transaction.get(oldDocRef);
+      if (!oldSnap.exists) {
+        throw new Error('Lịch hẹn cũ không tồn tại');
+      }
+
+      const oldData = oldSnap.data() as AppointmentDoc;
+      if (!['CANCELLED', 'NO_SHOW'].includes(oldData.status)) {
+        throw new Error('Chỉ có thể Reopen lịch đã bị hủy (CANCELLED/NO_SHOW)');
+      }
+
+      // 1. Auto-Refund hóa đơn phạt nếu có
+      if (oldData.invoiceId) {
+        await refundInvoiceInTx(
+          transaction,
+          oldData.invoiceId,
+          `Hoàn tiền tự động do Mở lại lịch (Reopen) từ Lịch ID: ${oldId}`,
+          cancelledBy || 'System',
+          true // isPenalty = true (Bỏ qua trừ điểm/visit)
+        );
+      }
+
+      // 2. Clone thông tin lịch cũ sang lịch mới (Lịch B)
+      const newAppointmentData: AppointmentDoc = {
+        customerId: oldData.customerId,
+        customerName: oldData.customerName,
+        serviceId: oldData.serviceId || null,
+        serviceName: oldData.serviceName || null,
+        staffId: oldData.staffId || null,
+        staffName: oldData.staffName || null,
+        services: oldData.services || [],
+        date: oldData.date, // Sẽ được lễ tân đổi sau trên UI
+        startTime: oldData.startTime, // Sẽ được lễ tân đổi sau trên UI
+        endTime: oldData.endTime || null,
+        status: 'DEPOSIT', // Khởi tạo với DEPOSIT vì tiền cọc được bảo toàn
+        statusHistory: [{
+          status: 'DEPOSIT',
+          timestamp: Timestamp.now() as any,
+        }],
+        notes: `[Lịch Reopen từ hủy] ${oldData.notes || ''}`.trim(),
+        deposit: oldData.deposit || 0,
+        createdAt: serverTimestamp() as any,
+        updatedAt: serverTimestamp() as any,
+      };
+
+      const newDocRef = db.collection(COLLECTIONS.APPOINTMENTS).doc();
+      transaction.set(newDocRef, newAppointmentData);
+
+      // Cập nhật lại lịch cũ để ghi chú đã được Reopen (Optional - Audit Trail)
+      transaction.update(oldDocRef, {
+        notes: `Đã được nhân bản sang Lịch mới (Reopened). ${oldData.notes || ''}`.trim(),
+        updatedAt: serverTimestamp() as any,
+      });
+
+      // Lưu lại thông tin Lịch B để trả về client
+      // Lưu ý: Timestamp.now() được dùng tạm thời cho dữ liệu client để tránh lỗi render
+      clonedAppointment = serializeDoc(newDocRef.id, {
+        ...newAppointmentData,
+        date: newAppointmentData.date,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      } as any) as ClientAppointmentDoc;
+    });
+
+    revalidatePath('/lich-hen');
+    revalidatePath('/doanh-thu');
+    revalidatePath('/chi-phi'); // Bổ sung reload chi-phi vì có sinh Expense phiếu chi
+    revalidatePath('/');
+
+    if (!clonedAppointment) {
+      throw new Error("Lỗi khi clone lịch hẹn");
+    }
+
+    return { success: true, newAppointment: clonedAppointment };
+  } catch (error: any) {
+    console.error('Error reopening appointment as clone:', error);
+    return { success: false, error: error.message || 'Không thể Reopen lịch hẹn' };
   }
 }
