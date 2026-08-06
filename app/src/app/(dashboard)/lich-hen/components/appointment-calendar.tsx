@@ -107,16 +107,17 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
     try {
       const res = await reopenAppointmentAsClone(selectedAppointment.id);
       if (res.success && res.newAppointment) {
+        const newApp = res.newAppointment;
         toast.success('Đã mở lại lịch và hoàn tiền cọc thành công!');
         
         setIsDetailOpen(false);
         // Wait briefly to avoid dialog stacking issues
         setTimeout(() => {
-          setSelectedAppointment(res.newAppointment);
+          setSelectedAppointment(newApp);
           setIsFormOpen(true);
         }, 300);
       } else {
-        toast.error(res.error || 'Lỗi khi mở lại lịch hẹn');
+        toast.error(!res.success ? res.error : 'Lỗi khi mở lại lịch hẹn');
       }
     } catch (err: any) {
       toast.error('Lỗi hệ thống khi mở lại lịch hẹn');

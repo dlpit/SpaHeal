@@ -424,7 +424,10 @@ import { refundInvoiceInTx } from '@/lib/invoice-helpers';
 /**
  * Mở lại lịch (Reopen): Thực hiện Refund hóa đơn phạt cũ (nếu có) và Clone sang một Lịch B mới với trạng thái DEPOSIT
  */
-export async function reopenAppointmentAsClone(oldId: string, cancelledBy?: string) {
+export async function reopenAppointmentAsClone(
+  oldId: string, 
+  cancelledBy?: string
+): Promise<{ success: true; newAppointment: ClientAppointmentDoc } | { success: false; error: string }> {
   try {
     const oldDocRef = db.collection(COLLECTIONS.APPOINTMENTS).doc(oldId);
     let clonedAppointment: ClientAppointmentDoc | null = null;
