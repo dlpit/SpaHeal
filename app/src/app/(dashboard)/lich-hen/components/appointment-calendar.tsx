@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 import { ClientAppointmentDoc, updateAppointmentStatus, reopenAppointmentAsClone } from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc, AppointmentStatus } from '@/lib/firestore-types';
 import { PageHeader } from '@/components/ui/page-header';
@@ -128,40 +129,42 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
 
   // Sync date to FullCalendar when activeView changes to month/list
   useEffect(() => {
+    let isSubscribed = true;
     if (calendarRef.current) {
-      calendarRef.current.getApi().gotoDate(currentDate);
+      const api = calendarRef.current.getApi();
       const fcView = activeView === 'month' ? 'dayGridMonth' : 'listWeek';
-      calendarRef.current.getApi().changeView(fcView);
+      queueMicrotask(() => {
+        if (isSubscribed && calendarRef.current) {
+          api.gotoDate(currentDate);
+          api.changeView(fcView);
+        }
+      });
     }
-  }, [activeView]);
-
-  const setDateAndSync = (nd: Date) => {
-    setCurrentDate(nd);
-    if (calendarRef.current) {
-      calendarRef.current.getApi().gotoDate(nd);
-    }
-  };
+    return () => {
+      isSubscribed = false;
+    };
+  }, [activeView, currentDate]);
 
   const goBack = () => {
-    const nd = new Date(currentDate);
-    if (activeView === 'month') nd.setMonth(nd.getMonth() - 1);
-    else if (activeView === 'week') nd.setDate(nd.getDate() - 7);
-    else nd.setDate(nd.getDate() - 1); // day or list
-    setDateAndSync(nd);
+    let nd: Date;
+    if (activeView === 'month') nd = subMonths(currentDate, 1);
+    else if (activeView === 'week') nd = subWeeks(currentDate, 1);
+    else nd = subDays(currentDate, 1);
+    setCurrentDate(nd);
   };
 
   const goForward = () => {
-    const nd = new Date(currentDate);
-    if (activeView === 'month') nd.setMonth(nd.getMonth() + 1);
-    else if (activeView === 'week') nd.setDate(nd.getDate() + 7);
-    else nd.setDate(nd.getDate() + 1);
-    setDateAndSync(nd);
+    let nd: Date;
+    if (activeView === 'month') nd = addMonths(currentDate, 1);
+    else if (activeView === 'week') nd = addWeeks(currentDate, 1);
+    else nd = addDays(currentDate, 1);
+    setCurrentDate(nd);
   };
 
   const goToday = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    setDateAndSync(today);
+    setCurrentDate(today);
   };
 
   const titleStr = useMemo(() => {

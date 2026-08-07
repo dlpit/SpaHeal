@@ -44,3 +44,9 @@ serviceAccountKey*.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Firebase Emulator
+emulators-data/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*

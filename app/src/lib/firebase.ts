@@ -18,17 +18,30 @@ function getFirebaseApp(): App {
     return firebaseApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  const projectId = process.env.FIREBASE_PROJECT_ID || 'spa-heal-dev';
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL || 'dummy@localhost';
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY || '-----BEGIN PRIVATE KEY-----\ndummy\n-----END PRIVATE KEY-----\n';
 
-  if (!projectId || !clientEmail || !privateKey) {
+  // Tự động ép dùng Emulator khi ở môi trường development
+  if (process.env.NODE_ENV === 'development' && process.env.USE_FIREBASE_EMULATOR !== 'false') {
+    if (!process.env.FIRESTORE_EMULATOR_HOST) {
+      process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+    }
+    if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+      process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
+    }
+    console.log('🔥 Firebase Admin: Kết nối vào Local Emulator');
+  }
+
+  // Bắt lỗi nếu thiếu credential VÀ không dùng emulator
+  if (!process.env.FIRESTORE_EMULATOR_HOST && (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY)) {
     throw new Error(
       'Missing Firebase Admin credentials. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in your .env file.'
     );
   }
 
   firebaseApp = initializeApp({
+    projectId,
     credential: cert({
       projectId,
       clientEmail,
@@ -55,6 +68,7 @@ export function getDb(): Firestore {
  * Check if Firebase is configured (credentials present in env)
  */
 export function isFirebaseConfigured(): boolean {
+  if (process.env.NODE_ENV === 'development') return true;
   return !!(
     process.env.FIREBASE_PROJECT_ID &&
     process.env.FIREBASE_CLIENT_EMAIL &&

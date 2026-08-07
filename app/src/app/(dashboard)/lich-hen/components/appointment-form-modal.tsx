@@ -308,55 +308,65 @@ export function AppointmentFormModal({
               </Button>
             </div>
             
-            {serviceFields.map((field, index) => (
-              <div key={field.id} className="grid grid-cols-[1fr_6rem_7rem_auto] items-center gap-2 bg-[var(--spa-warm-100)] p-2 rounded-md">
-                <div className="min-w-0 space-y-1">
-                  <ServiceCombobox
-                    value={watch(`services.${index}.serviceId`)}
-                    initialServices={
-                      watch(`services.${index}.serviceId`) && watch(`services.${index}.serviceName`)
-                        ? [{ id: watch(`services.${index}.serviceId`)!, name: watch(`services.${index}.serviceName`)!, code: '', price: watch(`services.${index}.price`)! }]
-                        : []
-                    }
-                    disabled={isReadOnly}
-                    onValueChange={(val) => {
-                      if (val === '__none__') {
-                        setValue(`services.${index}.serviceId`, '');
-                        setValue(`services.${index}.serviceName`, '');
-                        setValue(`services.${index}.price`, 0);
-                      } else {
-                        setValue(`services.${index}.serviceId`, val, { shouldValidate: true });
-                      }
-                    }}
-                    onServiceSelected={(s) => {
-                      setValue(`services.${index}.serviceName`, s.name, { shouldValidate: true });
-                      setValue(`services.${index}.price`, s.price, { shouldValidate: true });
-                    }}
-                  />
-                  {errors.services?.[index]?.serviceId && <p className="text-xs text-[var(--spa-danger)]">{errors.services[index].serviceId?.message}</p>}
-                </div>
-                
-                <div className="space-y-1">
-                  <Input 
-                    type="number" 
-                    min={1} 
-                    {...register(`services.${index}.quantity`, { valueAsNumber: true })} 
-                    className={cn(errors.services?.[index]?.quantity ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
-                    readOnly={isReadOnly}
-                  />
-                </div>
-                
-                <div className="pt-2 text-right">
-                  <span className="text-sm font-medium text-[var(--spa-text-primary)]">
-                    {formatCurrency((watch(`services.${index}.quantity`) || 0) * (watch(`services.${index}.price`) || 0))}
-                  </span>
-                </div>
-                
-                <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => removeService(index)} disabled={isReadOnly}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            ))}
+            {(() => {
+              const watchedServices = watch('services') || [];
+              const selectedAppointmentServiceIds = watchedServices.map((s: any) => s.serviceId).filter(Boolean);
+              return serviceFields.map((field, index) => {
+                const currentSvcId = watch(`services.${index}.serviceId`);
+                const excludedServiceIds = selectedAppointmentServiceIds.filter((id: string) => id !== currentSvcId);
+                return (
+                  <div key={field.id} className="grid grid-cols-[1fr_6rem_7rem_auto] items-center gap-2 bg-[var(--spa-warm-100)] p-2 rounded-md">
+                    <div className="min-w-0 space-y-1">
+                      <ServiceCombobox
+                        value={currentSvcId}
+                        excludedServiceIds={excludedServiceIds}
+                        initialServices={
+                          currentSvcId && watch(`services.${index}.serviceName`)
+                            ? [{ id: currentSvcId, name: watch(`services.${index}.serviceName`)!, code: '', price: watch(`services.${index}.price`)! }]
+                            : []
+                        }
+                        disabled={isReadOnly}
+                        onValueChange={(val) => {
+                          if (val === '__none__') {
+                            setValue(`services.${index}.serviceId`, '');
+                            setValue(`services.${index}.serviceName`, '');
+                            setValue(`services.${index}.price`, 0);
+                          } else {
+                            setValue(`services.${index}.serviceId`, val, { shouldValidate: true });
+                          }
+                        }}
+                        onServiceSelected={(s) => {
+                          setValue(`services.${index}.serviceName`, s.name, { shouldValidate: true });
+                          setValue(`services.${index}.price`, s.price, { shouldValidate: true });
+                        }}
+                      />
+                      {errors.services?.[index]?.serviceId && <p className="text-xs text-[var(--spa-danger)]">{errors.services[index].serviceId?.message}</p>}
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Input 
+                        type="number" 
+                        min={1} 
+                        {...register(`services.${index}.quantity`, { valueAsNumber: true })} 
+                        className={cn(errors.services?.[index]?.quantity ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
+                        readOnly={isReadOnly}
+                        disabled={isReadOnly}
+                      />
+                    </div>
+                    
+                    <div className="pt-2 text-right">
+                      <span className="text-sm font-medium text-[var(--spa-text-primary)]">
+                        {formatCurrency((watch(`services.${index}.quantity`) || 0) * (watch(`services.${index}.price`) || 0))}
+                      </span>
+                    </div>
+                    
+                    <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0" onClick={() => removeService(index)} disabled={isReadOnly}>
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                );
+              });
+            })()}
             
             <div className="flex justify-between items-center py-2 px-3 border-t border-[var(--spa-border)] mt-2">
               <span className="font-medium text-[var(--spa-text-primary)]">Tổng tạm tính:</span>
@@ -411,6 +421,7 @@ export function AppointmentFormModal({
                 {...register('startTime')}
                 className={cn(errors.startTime ? 'border-[var(--spa-danger)]' : '', isReadOnly && 'opacity-50 pointer-events-none')}
                 readOnly={isReadOnly}
+                disabled={isReadOnly}
               />
               {errors.startTime && <p className="text-xs text-[var(--spa-danger)]">{errors.startTime.message}</p>}
             </div>
@@ -424,6 +435,7 @@ export function AppointmentFormModal({
                 {...register('endTime')}
                 className={isReadOnly ? 'opacity-50 pointer-events-none' : ''}
                 readOnly={isReadOnly}
+                disabled={isReadOnly}
               />
             </div>
 

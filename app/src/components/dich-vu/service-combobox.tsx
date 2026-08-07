@@ -27,6 +27,7 @@ interface ServiceComboboxProps {
   initialServices?: ServiceOption[];
   error?: boolean;
   disabled?: boolean;
+  excludedServiceIds?: string[];
 }
 
 export function ServiceCombobox({
@@ -36,15 +37,32 @@ export function ServiceCombobox({
   initialServices = [],
   error,
   disabled,
+  excludedServiceIds = [],
 }: ServiceComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [services, setServices] = React.useState<ServiceOption[]>(initialServices);
 
+  React.useEffect(() => {
+    if (initialServices && initialServices.length > 0 && query === '') {
+      setServices((prev) => {
+        const map = new Map<string, ServiceOption>();
+        prev.forEach((s) => map.set(s.id, s));
+        initialServices.forEach((s) => map.set(s.id, s));
+        return Array.from(map.values());
+      });
+    }
+  }, [initialServices, query]);
+
   const selectedService = React.useMemo(() => {
     return services.find((s) => s.id === value) || initialServices.find((s) => s.id === value);
   }, [value, services, initialServices]);
+
+  const filteredServices = React.useMemo(() => {
+    if (!excludedServiceIds || excludedServiceIds.length === 0) return services;
+    return services.filter((s) => !excludedServiceIds.includes(s.id) || s.id === value);
+  }, [services, excludedServiceIds, value]);
 
   React.useEffect(() => {
     let active = true;
@@ -132,7 +150,7 @@ export function ServiceCombobox({
                       )}
                     />
                   </CommandItem>
-                  {services.map((service) => (
+                  {filteredServices.map((service) => (
                     <CommandItem
                       key={service.id}
                       value={service.id}

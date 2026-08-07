@@ -159,6 +159,10 @@ export function InvoiceForm({
   // Watch values for calculation
   const items = form.watch("items");
 
+  const selectedServiceIds = useMemo(() => {
+    return (items || []).map((item) => item.serviceId).filter(Boolean);
+  }, [items]);
+
   useEffect(() => {
     if (!onServicesChange) return;
     const selectedServices: { serviceId: string; serviceName: string }[] = [];
@@ -400,6 +404,8 @@ export function InvoiceForm({
               <div className="space-y-4">
                 {fields.map((field, index) => {
                   const error = form.formState.errors.items?.[index];
+                  const currentServiceId = form.watch(`items.${index}.serviceId`);
+                  const excludedServiceIds = selectedServiceIds.filter((id) => id !== currentServiceId);
                   return (
                     <div key={field.id} className="grid grid-cols-12 gap-4 items-start bg-background p-4 rounded-xl border border-muted shadow-sm relative group">
                       
@@ -407,7 +413,7 @@ export function InvoiceForm({
                       <div className="col-span-12 sm:col-span-6 space-y-1">
                         <Label className="text-xs text-muted-foreground">Tên dịch vụ <span className="text-red-500">*</span></Label>
                         <ServiceCombobox
-                          value={form.watch(`items.${index}.serviceId`)}
+                          value={currentServiceId}
                           onValueChange={(val) => form.setValue(`items.${index}.serviceId`, val)}
                           onServiceSelected={(service) => {
                             if (service) {
@@ -415,6 +421,7 @@ export function InvoiceForm({
                               setServiceNameMap(prev => ({ ...prev, [service.id]: service.name }));
                             }
                           }}
+                          excludedServiceIds={excludedServiceIds}
                           initialServices={initialServices}
                           error={!!error?.serviceId}
                         />
