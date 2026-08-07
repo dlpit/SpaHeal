@@ -4,6 +4,8 @@ import { ServiceTable } from './components/service-table';
 import { Layers } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Quản lý Dịch vụ | Spa Heal',
   description: 'Quản lý danh sách dịch vụ và danh mục dịch vụ của Spa Heal',

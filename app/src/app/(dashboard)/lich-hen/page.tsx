@@ -3,6 +3,8 @@ import { getAppointments } from '@/app/actions/appointment-actions';
 import { getFrequentCustomers } from '@/app/actions/customer';
 import { AppointmentCalendar } from './components/appointment-calendar';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Lịch hẹn | Spa Heal',
   description: 'Quản lý lịch hẹn của khách hàng',

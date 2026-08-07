@@ -3,6 +3,8 @@ import { CustomerTable } from '@/components/khach-hang/customer-table';
 import { PageHeader } from '@/components/ui/page-header';
 import { Users } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: 'Khách hàng | SpaHeal',
   description: 'Quản lý khách hàng Spa',

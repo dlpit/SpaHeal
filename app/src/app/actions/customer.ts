@@ -25,7 +25,7 @@ export async function getCustomers(): Promise<ClientCustomerDoc[]> {
     return customers;
   } catch (error) {
     console.error('Error getting customers:', error);
-    throw new Error('Không thể tải danh sách khách hàng');
+    return [];
   }
 }
 

@@ -54,7 +54,7 @@ export async function getAppointments(): Promise<ClientAppointmentDoc[]> {
     return appointments;
   } catch (error) {
     console.error('Error getting appointments:', error);
-    throw new Error('Không thể tải danh sách lịch hẹn');
+    return [];
   }
 }
 

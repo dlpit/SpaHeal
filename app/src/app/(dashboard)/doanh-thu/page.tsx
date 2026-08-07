@@ -8,6 +8,8 @@ import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { getInvoices } from '@/app/actions/invoice';
 import type { ClientInvoiceDoc } from '@/lib/firestore-types';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: "Doanh thu | SpaHeal",
   description: "Quản lý hóa đơn và theo dõi doanh thu của cửa hàng spa",

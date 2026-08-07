@@ -45,7 +45,7 @@ export async function getServices(): Promise<{ services: SerializedService[], ca
     return { services, categories };
   } catch (error) {
     console.error('Error fetching services:', error);
-    throw new Error('Không thể tải danh sách dịch vụ');
+    return { services: [], categories: [] };
   }
 }
 
