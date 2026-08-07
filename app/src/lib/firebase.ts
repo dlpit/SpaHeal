@@ -33,10 +33,10 @@ function getFirebaseApp(): App {
     console.log('🔥 Firebase Admin: Kết nối vào Local Emulator');
   }
 
-  // Bắt lỗi nếu thiếu credential VÀ không dùng emulator
+  // Cảnh báo nếu thiếu credential VÀ không dùng emulator
   if (!process.env.FIRESTORE_EMULATOR_HOST && (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY)) {
-    throw new Error(
-      'Missing Firebase Admin credentials. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in your .env file.'
+    console.warn(
+      '⚠️ Missing Firebase Admin credentials. Please set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in your Vercel Environment Variables.'
     );
   }
 

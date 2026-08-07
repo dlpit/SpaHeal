@@ -15,14 +15,19 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const formData = new FormData(e.currentTarget);
-    const result = await login(formData);
+    try {
+      const formData = new FormData(e.currentTarget);
+      const result = await login(formData);
 
-    if (result.success) {
-      router.push('/');
-      router.refresh();
-    } else {
-      setError(result.error || 'Đăng nhập thất bại');
+      if (result.success) {
+        window.location.href = '/';
+      } else {
+        setError(result.error || 'Đăng nhập thất bại');
+        setLoading(false);
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError('Đã xảy ra lỗi kết nối. Vui lòng thử lại.');
       setLoading(false);
     }
   };
