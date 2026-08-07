@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
-import { ClientAppointmentDoc, updateAppointmentStatus, reopenAppointmentAsClone } from '@/app/actions/appointment-actions';
+import { ClientAppointmentDoc, updateAppointmentStatus, reopenAppointmentAsClone, getAppointments } from '@/app/actions/appointment-actions';
 import { ClientCustomerDoc, AppointmentStatus } from '@/lib/firestore-types';
 import { PageHeader } from '@/components/ui/page-header';
 import { CustomCalendarGrid } from './custom-calendar-grid';
@@ -54,9 +54,32 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
     return d;
   });
 
+  const [appointments, setAppointments] = useState<ClientAppointmentDoc[]>(initialAppointments);
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  const fetchAppointments = async () => {
+    setIsLoadingAppointments(true);
+    try {
+      const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59);
+      const data = await getAppointments(start, end);
+      setAppointments(data);
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+    } finally {
+      setIsLoadingAppointments(false);
+    }
+  };
+
+  // Fetch appointments when currentDate changes
+  useEffect(() => {
+    if (!isMounted) return; // Không fetch lần đầu tiên vì đã có initialAppointments
+    fetchAppointments();
+  }, [currentDate, isMounted]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -79,8 +102,9 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       if (res.success) {
         toast.success(`Đã cập nhật trạng thái thành: ${STATUS_LABELS[status].label}`);
         
-        // Luôn cập nhật local state để view thay đổi liền mạch và logic revert hoạt động đúng
+        // Cập nhật lại UI calendar liền mạch
         setSelectedAppointment({ ...selectedAppointment, status });
+        fetchAppointments();
 
         if (status === 'COMPLETED' || forceInvoice) {
           setIsDetailOpen(false);
@@ -110,6 +134,7 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       if (res.success && res.newAppointment) {
         const newApp = res.newAppointment;
         toast.success('Đã mở lại lịch và hoàn tiền cọc thành công!');
+        fetchAppointments();
         
         setIsDetailOpen(false);
         // Wait briefly to avoid dialog stacking issues
@@ -200,8 +225,8 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
   };
 
   const filteredAppointments = useMemo(() => {
-    return initialAppointments.filter(app => showCancelled || app.status !== 'CANCELLED');
-  }, [initialAppointments, showCancelled]);
+    return appointments.filter(app => showCancelled || app.status !== 'CANCELLED');
+  }, [appointments, showCancelled]);
 
   // FullCalendar event adapters
   const fcEvents = useMemo(() => {
@@ -377,7 +402,10 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       {/* Form Modal */}
       <AppointmentFormModal
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={(isSuccess?: boolean) => {
+          setIsFormOpen(false);
+          if (isSuccess) fetchAppointments();
+        }}
         appointment={selectedAppointment}
         customers={customers}
         selectedDateStr={selectedDateStr}
@@ -599,9 +627,10 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
                     loading: 'Khách chưa thanh toán, đang hoàn tác trạng thái lịch hẹn...',
                     success: () => {
                       const revertedLabel = STATUS_LABELS[previousStatus]?.label ?? previousStatus;
-                      setSelectedAppointment(prev => prev ? { ...prev, status: previousStatus } : null);
-                      setPreviousStatus(null);
-                      return `Đã lùi trạng thái về: ${revertedLabel}`;
+                        setSelectedAppointment(prev => prev ? { ...prev, status: previousStatus } : null);
+                        setPreviousStatus(null);
+                        fetchAppointments();
+                        return `Đã lùi trạng thái về: ${revertedLabel}`;
                     },
                     error: (err) => err.message || 'Lỗi hoàn tác trạng thái'
                   }
@@ -620,7 +649,10 @@ export function AppointmentCalendar({ initialAppointments, customers }: Appointm
       {/* Cancel Appointment Modal */}
       <CancelAppointmentModal
         isOpen={isCancelModalOpen}
-        onClose={() => setIsCancelModalOpen(false)}
+        onClose={(isSuccess?: boolean) => {
+          setIsCancelModalOpen(false);
+          if (isSuccess) fetchAppointments();
+        }}
         appointment={selectedAppointment}
       />
     </div>

@@ -40,7 +40,7 @@ import { ClientCustomerDoc } from '@/lib/firestore-types';
 
 interface AppointmentFormModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (isSuccess?: boolean) => void;
   appointment: ClientAppointmentDoc | null;
   customers: ClientCustomerDoc[];
   selectedDateStr?: string | null;
@@ -195,7 +195,7 @@ export function AppointmentFormModal({
             return;
           }
         }
-        onClose();
+        onClose(true);
       } catch (err: any) {
         setError(err.message || 'Có lỗi xảy ra, vui lòng thử lại sau.');
       }
@@ -230,7 +230,7 @@ export function AppointmentFormModal({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
         <DialogContent className="sm:max-w-[600px] bg-[var(--spa-warm-50)] border-[var(--spa-border)] max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
           <DialogTitle className="text-[var(--spa-text-primary)] font-serif text-xl">
@@ -572,7 +572,7 @@ export function AppointmentFormModal({
             <Button
               type="button"
               variant="outline"
-              onClick={onClose}
+              onClick={() => onClose()}
               className="border-[var(--spa-border)] text-[var(--spa-text-secondary)] hover:bg-[var(--spa-warm-100)]"
             >
               Hủy

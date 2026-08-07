@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -15,14 +16,22 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import { NAV_ITEMS } from "@/lib/constants";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NavItem } from "@/types";
 import * as Icons from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { logout } from "@/app/actions/auth-actions";
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+    router.refresh();
+  };
 
   return (
     <header className="sticky top-0 z-40 flex h-[72px] items-center justify-between border-b bg-background/80 px-6 backdrop-blur-md">
@@ -113,19 +122,23 @@ export function Header() {
             }
           />
           <DropdownMenuContent className="w-56" align="end">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">Admin</p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  admin@busbeauty.com
-                </p>
-              </div>
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">Admin</p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    admin@busbeauty.com
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem>Hồ sơ cá nhân</DropdownMenuItem>
             <DropdownMenuItem>Cài đặt</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600">Đăng xuất</DropdownMenuItem>
+            <DropdownMenuItem className="text-red-600 cursor-pointer" onClick={handleLogout}>
+              Đăng xuất
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

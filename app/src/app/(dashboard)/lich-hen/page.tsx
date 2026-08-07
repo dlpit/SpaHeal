@@ -11,8 +11,13 @@ export const metadata: Metadata = {
 };
 
 export default async function AppointmentsPage() {
+  // Lấy lịch hẹn trong khoảng tháng hiện tại (Mặc định cho lần load đầu tiên)
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
   const [appointments, customers] = await Promise.all([
-    getAppointments(),
+    getAppointments(start, end),
     getFrequentCustomers(20)
   ]);
 

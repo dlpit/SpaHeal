@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:seed": "npx tsx scripts/seed-firestore.ts"
+    "db:seed": "npx tsx scripts/seed-firestore.ts",
+    "db:clone": "npx tsx scripts/clone-live-db.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -26,6 +27,7 @@
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
     "firebase-admin": "^14.2.0",
+    "jose": "^6.2.8",
     "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "next-themes": "^0.4.6",

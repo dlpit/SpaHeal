@@ -4,12 +4,14 @@ import { db } from '@/lib/firebase';
 import { COLLECTIONS, CustomerDoc, ClientCustomerDoc } from '@/lib/firestore-types';
 import { getNextSequence, serializeDoc, serverTimestamp, toTimestamp } from '@/lib/firestore-helpers';
 import { CustomerFormValues } from '@/lib/schemas/customer';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, unstable_cache } from 'next/cache';
 
-export async function getCustomers(): Promise<ClientCustomerDoc[]> {
+const getCustomersCached = unstable_cache(
+  async (): Promise<ClientCustomerDoc[]> => {
   try {
     const snapshot = await db.collection(COLLECTIONS.CUSTOMERS)
       .where('isActive', '==', true)
+      .limit(50)
       .get();
       
     // Sort in-memory để tránh composite index (theo pattern dự án)
@@ -27,6 +29,10 @@ export async function getCustomers(): Promise<ClientCustomerDoc[]> {
     console.error('Error getting customers:', error);
     return [];
   }
+}, ['customers-list'], { revalidate: 60 });
+
+export async function getCustomers(): Promise<ClientCustomerDoc[]> {
+  return getCustomersCached();
 }
 
 export async function createCustomer(data: CustomerFormValues) {
@@ -108,10 +114,12 @@ export async function getCustomer(id: string): Promise<ClientCustomerDoc | null>
   }
 }
 
-export async function getFrequentCustomers(limit: number = 20): Promise<ClientCustomerDoc[]> {
+const getFrequentCustomersCached = unstable_cache(
+  async (limit: number): Promise<ClientCustomerDoc[]> => {
   try {
     const snapshot = await db.collection(COLLECTIONS.CUSTOMERS)
       .where('isActive', '==', true)
+      .limit(100) // Tăng limit lên 100 trước khi sort in-memory để tăng độ chính xác thay vì 20 ngẫu nhiên
       .get();
       
     const customers = snapshot.docs
@@ -133,14 +141,20 @@ export async function getFrequentCustomers(limit: number = 20): Promise<ClientCu
     console.error('Error getting frequent customers:', error);
     throw new Error('Không thể tải danh sách khách hàng thân thiết');
   }
+}, ['frequent-customers'], { revalidate: 60 });
+
+export async function getFrequentCustomers(limit: number = 20): Promise<ClientCustomerDoc[]> {
+  return getFrequentCustomersCached(limit);
 }
 
-export async function searchCustomers(query: string = ''): Promise<ClientCustomerDoc[]> {
+const searchCustomersCached = unstable_cache(
+  async (query: string): Promise<ClientCustomerDoc[]> => {
   try {
     const q = query.trim().toLowerCase();
     
     const snapshot = await db.collection(COLLECTIONS.CUSTOMERS)
       .where('isActive', '==', true)
+      .limit(100) // Tăng lên 100 để mở rộng phạm vi tìm kiếm in-memory
       .get();
       
     let customers = snapshot.docs
@@ -172,5 +186,9 @@ export async function searchCustomers(query: string = ''): Promise<ClientCustome
     console.error('Error searching customers:', error);
     throw new Error('Không thể tìm kiếm khách hàng');
   }
+}, ['search-customers'], { revalidate: 60 });
+
+export async function searchCustomers(query: string = ''): Promise<ClientCustomerDoc[]> {
+  return searchCustomersCached(query);
 }
 

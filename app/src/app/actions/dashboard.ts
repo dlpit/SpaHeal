@@ -2,15 +2,16 @@
 
 import { db } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-types";
-import type { InvoiceDoc, CustomerDoc, AppointmentDoc } from "@/lib/firestore-types";
+import type { InvoiceDoc } from "@/lib/firestore-types";
 import { Timestamp } from "firebase-admin/firestore";
+import { unstable_cache } from "next/cache";
 
-export async function getDashboardData() {
+const getDashboardDataCached = unstable_cache(
+  async () => {
   try {
     const now = new Date();
 
     // Start and end of current month
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     // Start of today
@@ -21,26 +22,18 @@ export async function getDashboardData() {
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
     // Firestore Timestamps
-    const tsStartOfMonth = Timestamp.fromDate(startOfMonth);
-    const tsEndOfMonth = Timestamp.fromDate(endOfMonth);
     const tsStartOfToday = Timestamp.fromDate(startOfToday);
     const tsEndOfToday = Timestamp.fromDate(endOfToday);
     const tsSixMonthsAgo = Timestamp.fromDate(sixMonthsAgo);
+    const tsEndOfMonth = Timestamp.fromDate(endOfMonth);
 
     // 1. Fetch all data in parallel
     const [
-      monthlyInvoicesSnap,
       totalCustomersSnap,
       todayAppointmentsSnap,
       recentInvoicesSnap,
       chartInvoicesSnap,
     ] = await Promise.all([
-      // Doanh thu tháng này (completed invoices in current month)
-      db.collection(COLLECTIONS.INVOICES)
-        .where('date', '>=', tsStartOfMonth)
-        .where('date', '<=', tsEndOfMonth)
-        .get(),
-
       // Tổng số khách hàng active
       db.collection(COLLECTIONS.CUSTOMERS)
         .where('isActive', '==', true)
@@ -60,23 +53,14 @@ export async function getDashboardData() {
         .limit(5)
         .get(),
 
-      // Data biểu đồ: Hóa đơn 6 tháng gần nhất
+      // Data biểu đồ: Hóa đơn 6 tháng gần nhất (Bao gồm cả tháng này, nên có thể dùng để tính monthlyRevenue)
       db.collection(COLLECTIONS.INVOICES)
         .where('date', '>=', tsSixMonthsAgo)
         .where('date', '<=', tsEndOfMonth)
         .get(),
     ]);
 
-    // 2. Calculate monthly revenue
-    let monthlyRevenue = 0;
-    monthlyInvoicesSnap.docs.forEach(doc => {
-      const data = doc.data() as InvoiceDoc;
-      if (data.status === 'COMPLETED') {
-        monthlyRevenue += data.totalAmount;
-      }
-    });
-
-    // 3. Format recent invoices (match Prisma output shape)
+    // 2. Format recent invoices
     const recentInvoices = recentInvoicesSnap.docs.map(doc => {
       const data = doc.data() as InvoiceDoc;
       return {
@@ -91,11 +75,14 @@ export async function getDashboardData() {
       };
     });
 
-    // 4. Process Chart Data (6 tháng gần nhất)
+    // 3. Process Chart Data and calculate monthlyRevenue
+    let monthlyRevenue = 0;
     const chartData: { name: string; total: number }[] = [];
+    
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthStr = `T${d.getMonth() + 1}`;
+      const isCurrentMonth = i === 0;
 
       // Lọc hóa đơn trong tháng này
       const monthlyTotal = chartInvoicesSnap.docs
@@ -116,6 +103,10 @@ export async function getDashboardData() {
         name: monthStr,
         total: monthlyTotal,
       });
+
+      if (isCurrentMonth) {
+        monthlyRevenue = monthlyTotal;
+      }
     }
 
     return {
@@ -135,4 +126,8 @@ export async function getDashboardData() {
     console.error("Dashboard data error:", error);
     return { success: false, error: "Không thể tải dữ liệu Dashboard." };
   }
+}, ['dashboard-data'], { revalidate: 300 }); // Cache 5 phút
+
+export async function getDashboardData() {
+  return getDashboardDataCached();
 }

@@ -4,7 +4,7 @@ import { db } from '@/lib/firebase';
 import { COLLECTIONS, AppointmentDoc, AppointmentStatus, StaffDoc, ServiceDoc, StatusHistoryLog } from '@/lib/firestore-types';
 import { serializeDoc, serverTimestamp, toTimestamp, generateInvoiceCodeInTx } from '@/lib/firestore-helpers';
 import { AppointmentFormValues } from '@/lib/schemas/appointment';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag, unstable_cache } from 'next/cache';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { INITIAL_APPOINTMENT_STATUSES, APPOINTMENT_TRANSITIONS } from '@/lib/constants/appointment';
 
@@ -25,15 +25,19 @@ export type ClientAppointmentDoc = Omit<AppointmentDoc, 'createdAt' | 'updatedAt
  * Lấy danh sách tất cả lịch hẹn trong 60 ngày qua đến tương lai.
  * Giới hạn thời gian để tránh collection phình to ảnh hưởng hiệu năng.
  */
-export async function getAppointments(): Promise<ClientAppointmentDoc[]> {
+// Dùng pattern HOF để truyền startDate, endDate vào key của unstable_cache
+const getAppointmentsCached = (startDateStr: string, endDateStr: string) => unstable_cache(
+  async (): Promise<ClientAppointmentDoc[]> => {
   try {
-    // Chỉ lấy appointments từ 60 ngày trước đến tương lai
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
 
     const snapshot = await db.collection(COLLECTIONS.APPOINTMENTS)
-      .where('date', '>=', Timestamp.fromDate(sixtyDaysAgo))
+      .where('date', '>=', Timestamp.fromDate(start))
+      .where('date', '<=', Timestamp.fromDate(end))
       .orderBy('date', 'asc')
+      // Đã giới hạn theo Date Range nên không cần limit hẹp, có thể dùng số lớn để đảm bảo an toàn hoặc bỏ limit
+      .limit(1000) 
       .get();
 
     const appointments = snapshot.docs.map(doc => {
@@ -56,6 +60,10 @@ export async function getAppointments(): Promise<ClientAppointmentDoc[]> {
     console.error('Error getting appointments:', error);
     return [];
   }
+}, ['appointments', startDateStr, endDateStr], { revalidate: 60, tags: ['appointments'] });
+
+export async function getAppointments(startDate: Date, endDate: Date): Promise<ClientAppointmentDoc[]> {
+  return getAppointmentsCached(startDate.toISOString(), endDate.toISOString())();
 }
 
 export async function createAppointment(data: AppointmentFormValues) {
@@ -89,6 +97,7 @@ export async function createAppointment(data: AppointmentFormValues) {
     const docRef = await db.collection(COLLECTIONS.APPOINTMENTS).add(appointmentData);
 
     revalidatePath('/lich-hen');
+    revalidateTag('appointments', undefined as any);
     return { success: true, id: docRef.id };
   } catch (error: any) {
     console.error('Error creating appointment:', error);
@@ -116,6 +125,7 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
         updatedAt: serverTimestamp() as any,
       });
       revalidatePath('/lich-hen');
+      revalidateTag('appointments', undefined as any);
       return { success: true };
     }
 
@@ -143,6 +153,7 @@ export async function updateAppointment(id: string, data: AppointmentFormValues)
     await docRef.update(updateData);
 
     revalidatePath('/lich-hen');
+    revalidateTag('appointments', undefined as any);
     return { success: true };
   } catch (error) {
     console.error('Error updating appointment:', error);
@@ -162,6 +173,7 @@ export async function updateAppointmentTime(id: string, newDate: Date, newStartT
     await db.collection(COLLECTIONS.APPOINTMENTS).doc(id).update(updateData);
 
     revalidatePath('/lich-hen');
+    revalidateTag('appointments', undefined as any);
     return { success: true };
   } catch (error) {
     console.error('Error updating appointment time:', error);
@@ -209,6 +221,7 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
     revalidatePath('/lich-hen');
     revalidatePath('/doanh-thu');
     revalidatePath('/');
+    revalidateTag('appointments', undefined as any);
     return { success: true };
   } catch (error) {
     console.error('Error updating appointment status:', error);
@@ -295,6 +308,7 @@ export async function cancelAppointment(
     });
 
     revalidatePath('/lich-hen');
+    revalidateTag('appointments', undefined as any);
     return { success: true };
   } catch (error: any) {
     console.error('Error canceling appointment:', error);
@@ -306,6 +320,7 @@ export async function deleteAppointment(id: string) {
   try {
     await db.collection(COLLECTIONS.APPOINTMENTS).doc(id).delete();
     revalidatePath('/lich-hen');
+    revalidateTag('appointments', undefined as any);
     return { success: true };
   } catch (error) {
     console.error('Error deleting appointment:', error);
@@ -350,10 +365,12 @@ export async function getAppointmentPrefill(appointmentId: string) {
 /**
  * Lấy danh sách Staff active để dùng trong form tạo/sửa lịch hẹn
  */
-export async function getStaffForAppointment() {
+const getStaffForAppointmentCached = unstable_cache(
+  async () => {
   try {
     const snapshot = await db.collection(COLLECTIONS.STAFF)
       .where('isActive', '==', true)
+      .limit(50)
       .get();
     return snapshot.docs.map(doc => {
       const data = doc.data() as StaffDoc;
@@ -363,15 +380,21 @@ export async function getStaffForAppointment() {
     console.error('Error getting staff:', error);
     return [];
   }
+}, ['staff-for-appointment'], { revalidate: 3600 });
+
+export async function getStaffForAppointment() {
+  return getStaffForAppointmentCached();
 }
 
 /**
  * Lấy danh sách Dịch vụ active để dùng trong form tạo/sửa lịch hẹn
  */
-export async function getServicesForAppointment() {
+const getServicesForAppointmentCached = unstable_cache(
+  async () => {
   try {
     const snapshot = await db.collection(COLLECTIONS.SERVICES)
       .where('isActive', '==', true)
+      .limit(50)
       .get();
     const services = snapshot.docs.map(doc => {
       const data = doc.data() as ServiceDoc;
@@ -383,17 +406,23 @@ export async function getServicesForAppointment() {
     console.error('Error getting services:', error);
     return [];
   }
+}, ['services-for-appointment'], { revalidate: 3600 });
+
+export async function getServicesForAppointment() {
+  return getServicesForAppointmentCached();
 }
 
 /**
  * Tìm kiếm dịch vụ với từ khóa, trả về danh sách giới hạn cho combobox
  */
-export async function searchServices(query: string = '') {
+const searchServicesCached = (query: string) => unstable_cache(
+  async () => {
   try {
     const q = query.trim().toLowerCase();
 
     const snapshot = await db.collection(COLLECTIONS.SERVICES)
       .where('isActive', '==', true)
+      .limit(100) // Tăng lên 100 để mở rộng phạm vi tìm kiếm in-memory
       .get();
 
     let services = snapshot.docs.map(doc => {
@@ -417,6 +446,10 @@ export async function searchServices(query: string = '') {
     console.error('Error searching services:', error);
     throw new Error('Không thể tìm kiếm dịch vụ');
   }
+}, ['search-services', query], { revalidate: 3600 });
+
+export async function searchServices(query: string = '') {
+  return searchServicesCached(query)();
 }
 
 import { refundInvoiceInTx } from '@/lib/invoice-helpers';
@@ -500,6 +533,7 @@ export async function reopenAppointmentAsClone(
     revalidatePath('/doanh-thu');
     revalidatePath('/chi-phi'); // Bổ sung reload chi-phi vì có sinh Expense phiếu chi
     revalidatePath('/');
+    revalidateTag('appointments', undefined as any);
 
     if (!clonedAppointment) {
       throw new Error("Lỗi khi clone lịch hẹn");

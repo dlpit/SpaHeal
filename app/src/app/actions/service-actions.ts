@@ -3,7 +3,7 @@
 import { getDb } from '@/lib/firebase';
 import { COLLECTIONS, type ServiceDoc, type ServiceCategoryDoc } from '@/lib/firestore-types';
 import { serializeDoc } from '@/lib/firestore-helpers';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, unstable_cache } from 'next/cache';
 import { FieldValue } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
@@ -20,13 +20,15 @@ const serviceSchema = z.object({
 export type SerializedService = ServiceDoc & { id: string };
 export type SerializedServiceCategory = ServiceCategoryDoc & { id: string };
 
-export async function getServices(): Promise<{ services: SerializedService[], categories: SerializedServiceCategory[] }> {
+const getServicesCached = unstable_cache(
+  async (): Promise<{ services: SerializedService[], categories: SerializedServiceCategory[] }> => {
   try {
     const db = getDb();
     
     // Fetch categories first
     const categoriesSnapshot = await db.collection(COLLECTIONS.SERVICE_CATEGORIES)
       .orderBy('sortOrder', 'asc')
+      .limit(50)
       .get();
       
     const categories = categoriesSnapshot.docs.map(doc => 
@@ -36,6 +38,7 @@ export async function getServices(): Promise<{ services: SerializedService[], ca
     // Fetch services
     const servicesSnapshot = await db.collection(COLLECTIONS.SERVICES)
       .orderBy('sortOrder', 'asc')
+      .limit(50)
       .get();
       
     const services = servicesSnapshot.docs.map(doc => 
@@ -47,6 +50,10 @@ export async function getServices(): Promise<{ services: SerializedService[], ca
     console.error('Error fetching services:', error);
     return { services: [], categories: [] };
   }
+}, ['services-list'], { revalidate: 3600 });
+
+export async function getServices(): Promise<{ services: SerializedService[], categories: SerializedServiceCategory[] }> {
+  return getServicesCached();
 }
 
 export async function createService(data: Omit<ServiceDoc, 'createdAt' | 'updatedAt'>) {

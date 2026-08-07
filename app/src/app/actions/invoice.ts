@@ -7,7 +7,7 @@ import type { ServiceDoc, StaffDoc, PaymentMethodDoc, PaymentAccountDoc, Custome
 import { calculateLoyaltyTier, calculateRewardPoints } from "@/lib/firestore-types";
 import { invoiceFormSchema, InvoiceFormValues, refundInvoiceSchema, RefundInvoiceValues } from "@/lib/schemas/invoice";
 import { generateInvoiceCode, generateInvoiceCodeInTx, serverTimestamp, toTimestamp, serializeDoc } from "@/lib/firestore-helpers";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, unstable_cache } from "next/cache";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 function inferPaymentType(code: string, explicitType?: PaymentType): PaymentType {
@@ -88,7 +88,8 @@ async function ensureDefaultPaymentOptions() {
   }
 }
 
-export async function getInvoiceFormOptions() {
+const getInvoiceFormOptionsCached = unstable_cache(
+  async () => {
   try {
     await ensureDefaultPaymentOptions();
 
@@ -99,12 +100,15 @@ export async function getInvoiceFormOptions() {
     ] = await Promise.all([
       db.collection(COLLECTIONS.STAFF)
         .where('isActive', '==', true)
+        .limit(50)
         .get(),
       db.collection(COLLECTIONS.PAYMENT_METHODS)
         .where('isActive', '==', true)
+        .limit(50)
         .get(),
       db.collection(COLLECTIONS.PAYMENT_ACCOUNTS)
         .where('isActive', '==', true)
+        .limit(50)
         .get(),
     ]);
 
@@ -137,14 +141,19 @@ export async function getInvoiceFormOptions() {
     console.error("Error fetching invoice options:", error);
     return { success: false, error: "Không thể lấy dữ liệu. Vui lòng thử lại sau." };
   }
+}, ['invoice-form-options'], { revalidate: 3600 });
+
+export async function getInvoiceFormOptions() {
+  return getInvoiceFormOptionsCached();
 }
 
-export async function getInvoices() {
+const getInvoicesCached = unstable_cache(
+  async () => {
   try {
     const snapshot = await db
       .collection(COLLECTIONS.INVOICES)
       .orderBy('date', 'desc')
-      .limit(100) // Giới hạn an toàn để tránh OOM
+      .limit(50) // Giảm từ 100 xuống 50 theo yêu cầu tối ưu Quota
       .get();
 
     const invoices = snapshot.docs.map((doc) => {
@@ -157,6 +166,10 @@ export async function getInvoices() {
     console.error('Error fetching invoices:', error);
     return { success: false, error: 'Không thể lấy danh sách hóa đơn.' };
   }
+}, ['invoices-list'], { revalidate: 60 });
+
+export async function getInvoices() {
+  return getInvoicesCached();
 }
 
 export async function createInvoice(data: InvoiceFormValues) {

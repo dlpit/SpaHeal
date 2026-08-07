@@ -28,7 +28,7 @@ import { AlertCircle } from 'lucide-react';
 
 interface CancelAppointmentModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (isSuccess?: boolean) => void;
   appointment: ClientAppointmentDoc | null;
 }
 
@@ -107,7 +107,7 @@ export function CancelAppointmentModal({
           return;
         }
         reset();
-        onClose();
+        onClose(true);
       } catch (err: any) {
         setError(err.message || 'Có lỗi xảy ra, vui lòng thử lại sau.');
       }
@@ -119,7 +119,7 @@ export function CancelAppointmentModal({
       reset();
       setError(null);
     }
-    onClose();
+    onClose(false);
   };
 
   if (!appointment) return null;

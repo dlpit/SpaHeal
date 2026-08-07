@@ -35,6 +35,19 @@ const app = getApps().length === 0
 
 const db = getFirestore(app);
 
+// Fast fail if emulator is configured but not reachable
+async function checkEmulator() {
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    try {
+      await fetch(`http://${process.env.FIRESTORE_EMULATOR_HOST}/`);
+    } catch (err) {
+      console.error(`\n❌ LỖI: Không thể kết nối tới Firestore Emulator tại ${process.env.FIRESTORE_EMULATOR_HOST}.`);
+      console.error('👉 Hãy chạy lệnh "npm run dev:emulators" ở một terminal khác trước khi seed dữ liệu!\n');
+      process.exit(1);
+    }
+  }
+}
+
 // ---- Collection names ----
 const COLLECTIONS = {
   SERVICE_CATEGORIES: 'serviceCategories',
@@ -65,6 +78,7 @@ const now = FieldValue.serverTimestamp();
 // ============================================================================
 
 async function main() {
+  await checkEmulator();
   console.log('🌱 Bắt đầu seed dữ liệu Firestore cho Bu\'s Beauty Hideout...\n');
 
   // =============================================
